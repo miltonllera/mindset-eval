@@ -1,0 +1,3 @@
+[submodule "mindset"]
+	path = mindset
+	url = git@github.com:miltonllera/mindset-vision.git
