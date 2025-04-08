@@ -3,7 +3,7 @@ import re
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
-from statsmodels.stats.anova import AnovaRM
+import statsmodels.api as sm
 
 sys.path.extend(["../", "../mindset"])
 
@@ -27,8 +27,7 @@ def load_data(recording_path, list_comparison_levels=None):
     list_comparison_levels = None
 
     df = pd.read_csv(recording_path)
-
-    print(len(df))
+    df = df.rename(columns={'Unnamed: 0': 'Entry'})
 
     pattern = re.compile(r"^\d+: .*$")
     layers_names = [col for col in df.columns if pattern.match(col)]
@@ -149,13 +148,9 @@ def plot_layer_comparison(df, lname):
 
 #------------------------------------------- Stats ------------------------------------------------
 
-def compute_layer_anova(df, subject, within, name_layer_used):
-    print(len(df))
-    r = AnovaRM(
-        data=df,
-        depvar=name_layer_used,
-        subject=subject,
-        within=within,
-        aggregate_func="mean",
-    ).fit()
-    return r
+def compute_layer_t_test(df, subject, within, name_layer_used):
+    model = sm.formula.ols(f'Q("{name_layer_used}") ~ C({within})', data=df).fit()
+    print(model.summary())
+    t_test_result = model.t_test(f"C({within})[T.{subject}] = 0")
+    print(t_test_result)
+    return t_test_result

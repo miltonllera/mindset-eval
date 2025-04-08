@@ -16,7 +16,7 @@ from .analysis import (
     get_recording_files,
     get_infor_from_recording_file_path,
     plot_per_layer_distance,
-    compute_layer_anova,
+    compute_layer_t_test,
     plot_layer_comparison
 )
 
@@ -152,8 +152,8 @@ def analyize_all(recording_paths: list[Path], comparison_levels=None, start_from
             for ext in ["png", "svg"]
         ]
 
-        r = compute_layer_anova(df, "TopShape", ["ComparisonLevel"], layer_names[-2])
-        r.anova_table.to_csv(p.parent / "anove.csv")
+        r = compute_layer_t_test(df, "occlusion", "ComparisonLevel", layer_names[-2])
+        # r.anova_table.to_csv(p.parent / "anove.csv")
 
 
 def main(
