@@ -3,7 +3,6 @@ import argparse
 import logging
 from functools import partial
 from pathlib import Path
-from typing import Callable
 
 import torch
 import timm
@@ -11,14 +10,8 @@ import torchvision.transforms as transforms
 
 sys.path.append("mindset/")
 from mindset.src.utils.similarity_judgment.activation_recorder import RecordDistance
-from .analysis import (
-    load_data,
-    get_recording_files,
-    get_infor_from_recording_file_path,
-    plot_per_layer_distance,
-    compute_layer_t_test,
-    plot_layer_comparison
-)
+from mindset.src.utils.device_utils import set_global_device, to_global_device
+from .analysis import  get_recording_files
 
 
 RESULTS_ROOT = "data/results/amodal_completion"
@@ -29,15 +22,12 @@ _logger = logging.getLogger(__name__)
 
 #---------------------------------------- Load models --------------------------------------------
 
-def init_model(model_name, device='auto', verbose=False):
-    if device == 'auto':
-        device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+def init_model(model_name, verbose=False):
+    model = timm.create_model(model_name, pretrained=True, cache_dir="data/models/")  # type: ignore
+    model = to_global_device(model)
 
-    model = timm.create_model(  # type: ignore
-        model_name, pretrained=True, cache_dir="data/models/"
-    ).to(device)
-
-    if verbose: print(model)
+    if verbose:
+        print(model)
 
     return model
 
@@ -47,11 +37,16 @@ def init_model(model_name, device='auto', verbose=False):
 def record_from_model(
     model: tuple[str, torch.nn.Module],
     metric: str,
-    transform_fn: Callable,
     annotations_file: str,
     results_folder: Path,
 ):
     model_name, net = model
+
+    transform_fn = transforms.Compose([
+        transforms.Resize(net.pretrained_cfg['input_size'][-1]),  # type: ignore
+        transforms.ToTensor(),
+        transforms.Normalize(net.pretrained_cfg['mean'], net.pretrained_cfg['std'])  # type: ignore
+    ])
 
     results_folder = results_folder / model_name
     results_folder.mkdir(parents=True, exist_ok=True)
@@ -93,21 +88,10 @@ def record_from_model(
 
 
 def record_all(annotations_file, models, model_names, results_folder):
-    norm_values = dict(mean=[0.491, 0.482, 0.447], std=[0.247, 0.243, 0.262])
-    resize_value = 224
-
-    # get_user_attributes(model)
-    transform_fn = transforms.Compose([
-        transforms.Resize(resize_value),
-        transforms.ToTensor(),
-        transforms.Normalize(norm_values['mean'], norm_values['std'])
-    ])
-
     record = partial(
         record_from_model,
         metric= "cossim",
         annotations_file=annotations_file,
-        transform_fn=transform_fn,
         results_folder=results_folder,
     )
 
@@ -116,44 +100,6 @@ def record_all(annotations_file, models, model_names, results_folder):
         recording_paths.append(record((n, m)))
 
     return recording_paths
-
-
-#-------------------------------------- Analysis -------------------------------------------------
-
-
-def analyize_all(recording_paths: list[Path], comparison_levels=None, start_from=0):
-    for p in  recording_paths:
-        model_name, metric = get_infor_from_recording_file_path(p)
-        df, layer_names = load_data(
-            p, list_comparison_levels=comparison_levels
-        )
-
-        fig_layers = plot_per_layer_distance(
-            model_name,
-            metric,
-            df.drop(columns='TopShape'),  # must drop the string colum to use aggragation functions
-            start_from
-        )
-
-        [
-            fig_layers.savefig(
-                str(p.parent / f"all_layers.{ext}"),
-                facecolor="white",
-            )
-            for ext in ["png", "svg"]
-        ]
-
-        fig_agg = plot_layer_comparison(df, layer_names[-2])
-        [
-            fig_agg.savefig(
-                str(p.parent / f"aggregated.{ext}"),
-                facecolor="white",
-            )
-            for ext in ["png", "svg"]
-        ]
-
-        r = compute_layer_t_test(df, "occlusion", "ComparisonLevel", layer_names[-2])
-        # r.anova_table.to_csv(p.parent / "anove.csv")
 
 
 def main(
@@ -169,6 +115,9 @@ def main(
     if save_folder != '':
         results_folder = results_folder / save_folder
 
+    device = 'cpu'
+    set_global_device(device)
+
     if not results_folder.exists() or overwrite_recordings:
         models = [init_model(m) for m in model_names]
         results_folder.mkdir(parents=True, exist_ok=True)
@@ -177,7 +126,7 @@ def main(
     else:
         recording_files = get_recording_files(results_folder, model_names)
 
-    analyize_all(recording_files, comparison_levels, start_from=0)
+    # analyize_all(recording_files, comparison_levels, start_from=0)
 
 
 if __name__ == "__main__":

@@ -24,6 +24,7 @@ dependencies = [
     "pyrootutils>=1.0.4",
     "scipy>=1.15.1",
     "seaborn>=0.13.2",
+    "sigstore>=1.0.0",
     "statsmodels>=0.14.4",
     "sty>=1.0.6",
     "timm>=1.0.14",
