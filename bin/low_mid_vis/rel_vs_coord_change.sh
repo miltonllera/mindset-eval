@@ -12,4 +12,4 @@ FOCALNET="focalnet_base_lrf focalnet_large_fl3.ms_in22k focalnet_xlarge_fl3.ms_i
 
 uv run python -m scripts.low_mid_vis.rel_vs_coord \
   --annotations "data/datasets/full/low_mid_level_vision/relational_vs_coordinate/annotation.csv" \
-  --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET
+  --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET  --overwrite_recordings

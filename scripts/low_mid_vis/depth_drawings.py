@@ -57,7 +57,7 @@ def record_from_model(
         annotations_file,
         factor_variable='Class',
         reference_level='basis',
-        match_factors=[],
+        match_factors=['Id'],
         non_match_factors=[],
         filter_factor_level={},
         distance_metric=metric,
@@ -72,10 +72,10 @@ def record_from_model(
         transf_boundaries={  # type: ignore
             'translation_X': [-0.2, 0.2],
             'translation_Y': [-0.2, 0.2],
-            'scale': [1.0, 1.5],
+            'scale': [1.0, 1.2],
             'rotation': [0, 360],
         },
-        transformed_repetition=5,
+        transformed_repetition=20,
         path_save_fig=results_folder,
         add_columns=[],
     )
@@ -114,7 +114,7 @@ def main(
     if save_folder != '':
         results_folder = results_folder / save_folder
 
-    device = 0 if torch.cuda.is_available() else 'cpu'
+    device = 'cpu'
     set_global_device(device)
 
     if not results_folder.exists() or overwrite_recordings:

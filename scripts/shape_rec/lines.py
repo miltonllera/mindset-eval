@@ -4,12 +4,16 @@ import logging
 from functools import partial
 from pathlib import Path
 
+import numpy as np
 import torch
 import timm
 import torchvision.transforms as transforms
+import pandas as pd
+import sty
+from tqdm import tqdm
 
 sys.path.append("mindset/")
-from mindset.src.utils.similarity_judgment.activation_recorder import RecordDistance
+from mindset.src.utils.dataset_utils import get_dataloader, ImageNetClasses
 from mindset.src.utils.device_utils import set_global_device, to_global_device
 from scripts.analysis import  get_recording_files
 
@@ -34,7 +38,7 @@ def init_model(model_name, verbose=False):
 
 #---------------------------------------- Recording ----------------------------------------------
 
-def record_from_model(
+def evaluate_model(
     model: tuple[str, torch.nn.Module],
     metric: str,
     annotations_file: str,
@@ -42,55 +46,97 @@ def record_from_model(
 ):
     model_name, net = model
 
-    transform_fn = transforms.Compose([
-        transforms.Resize(net.pretrained_cfg['input_size'][-1]),  # type: ignore
-        transforms.ToTensor(),
-        transforms.Normalize(net.pretrained_cfg['mean'], net.pretrained_cfg['std'])  # type: ignore
-    ])
-
     results_folder = results_folder / model_name
     results_folder.mkdir(parents=True, exist_ok=True)
 
     _logger.info(f"Recording from model: <{model_name}>")
 
-    recorder = RecordDistance(
-        annotations_file,
-        factor_variable='Class',
-        reference_level='basis',
-        match_factors=['Id'],
-        non_match_factors=[],  # don't know what this should be
-        filter_factor_level={},
-        distance_metric=metric,
-        net=net,
-        only_save=["Conv2d", "Linear"],
-    )
-
-
-    distance_df, layer_names = recorder.compute_from_annotation(
-        transform_fn,
-        matching_transform=True,
-        fill_bk=[0, 0, 0],
-        transf_boundaries={  # type: ignore
-            'translation_X': [-0.2, 0.2],
-            'translation_Y': [-0.2, 0.2],
-            'scale': [1.0, 1.5],
-            'rotation': [0, 360],
+    dataloader = get_dataloader(
+        task_type='classification',
+        ds_config={
+            'name': "line-drawings",
+            'annotations_file': annotations_file,
+            'img_path_col_name': "Path",
+            'label_cols': ...,
+            'filters': [],
         },
-        transformed_repetition=20,
-        path_save_fig=results_folder,
-        add_columns=[],
+        transf_config=None,
+        batch_size=10,
+        return_path=False,
+    )
+    imagenet_classes = ImageNetClasses()
+
+    results_final = []
+    results_path = results_folder / dataloader.dataset.name  # type: ignore
+    results_path.mkdir(parents=True, exist_ok=True)
+
+    print(
+        f"Evaluating Dataset "
+        + sty.fg.green
+        + f"{dataloader.dataset.name}"  # type: ignore
+        + sty.rs.fg
     )
 
-    _logger.info(f"Recording finished. Figures in: <{results_folder}>")
-    recordings_file_path = results_folder / f"{metric}.csv"
-    distance_df.to_csv(recordings_file_path)
+    for _, data in enumerate(tqdm(dataloader, colour="yellow")):
+        images, labels, path = data
+        images = to_global_device(images)
+        labels = to_global_device(labels)
+        output = net(images)
+        for i in range(len(labels)):
+            # Top 5 prediction
+            prediction = torch.topk(output[i], 5).indices.tolist()
 
-    return recordings_file_path
+            results_final.append(
+                {
+                    "image_path": path[i],
+                    "label_idx": labels[i].item(),
+                    "label_class_name": imagenet_classes.idx2label[
+                        labels[i].item()
+                    ],
+                    **{f"prediction_idx_top_{i}": prediction[i] for i in range(5)},
+                    **{
+                        f"prediction_class_name_top_{i}": imagenet_classes.idx2label[
+                            prediction[i]
+                        ]
+                        for i in range(5)
+                    },
+                    "Top-5 At Least One Correct": np.any(
+                        [labels[i].item() in prediction]
+                    ),
+                }
+            )
+
+    results_final_pandas = pd.DataFrame(results_final)
+    results_final_pandas.to_csv(results_path / "predictions.csv", index=False)
+
+    top_5_accuracy = np.mean(
+        [
+            results_final_pandas["label_idx"][i]
+            in list(
+                results_final_pandas[
+                    [
+                        "prediction_idx_top_0",
+                        "prediction_idx_top_1",
+                        "prediction_idx_top_2",
+                        "prediction_idx_top_3",
+                        "prediction_idx_top_4",
+                    ]
+                ].iloc[i]
+            )
+            for i in range(len(results_final_pandas))
+        ]
+    )
+    print(
+        f"Accuracy: {np.mean(results_final_pandas['label_idx'] == results_final_pandas['prediction_idx_top_0'])}"
+    )
+    print(f"Top 5 Accuracy: {top_5_accuracy}")
+
+    return results_path
 
 
-def record_all(annotations_file, models, model_names, results_folder):
+def evaluate_all(annotations_file, models, model_names, results_folder):
     record = partial(
-        record_from_model,
+        evaluate_model,
         metric= "cossim",
         annotations_file=annotations_file,
         results_folder=results_folder,
@@ -125,9 +171,7 @@ def main(
         models = [init_model(m) for m in model_names]
         results_folder.mkdir(parents=True, exist_ok=True)
         _logger.info(f"Set results root folder to {RESULTS_ROOT}")
-        recording_files = record_all(annotations_file, models, model_names, results_folder)
-    else:
-        recording_files = get_recording_files(results_folder, model_names)
+        evaluate_all(annotations_file, models, model_names, results_folder)
 
 
 if __name__ == "__main__":

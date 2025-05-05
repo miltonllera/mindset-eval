@@ -72,7 +72,7 @@ def record_from_model(
         transf_boundaries={  # type: ignore
             'translation_X': [-0.2, 0.2],
             'translation_Y': [-0.2, 0.2],
-            'scale': [1.0, 1.5],
+            'scale': [1.0, 1.2],
             'rotation': [0, 360],
         },
         transformed_repetition=20,

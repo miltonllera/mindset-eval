@@ -73,7 +73,7 @@ def record_from_model(
         transf_boundaries={  # type: ignore
             'translation_X': [-0.2, 0.2],
             'translation_Y': [-0.2, 0.2],
-            'scale': [1.0, 1.5],
+            'scale': [1.0, 1.2],
             'rotation': [0, 360],
         },
         transformed_repetition=20,
@@ -141,6 +141,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--save_folder", type=str, default='',
         help="Experiment folder where to store all results"
+    )
+    parser.add_argument("--overwrite_recordings", action='store_true',
+        help="Overwrite the recording file if it all already exists"
     )
 
     args = parser.parse_args()
