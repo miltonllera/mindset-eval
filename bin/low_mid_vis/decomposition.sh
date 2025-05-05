@@ -12,7 +12,7 @@ FOCALNET="focalnet_base_lrf focalnet_large_fl3.ms_in22k focalnet_xlarge_fl3.ms_i
 
 
 # decomposition (familiar)
-uv run python -m scripts.decomposition \
+uv run python -m scripts.low_mid_vis.decomposition \
   --annotations "data/datasets/full/low_mid_level_vision/decomposition/annotation.csv" \
   --shape_type "familiar" \
   --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET  --overwrite_recordings

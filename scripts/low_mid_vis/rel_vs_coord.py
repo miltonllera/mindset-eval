@@ -11,11 +11,10 @@ import torchvision.transforms as transforms
 sys.path.append("mindset/")
 from mindset.src.utils.similarity_judgment.activation_recorder import RecordDistance
 from mindset.src.utils.device_utils import set_global_device, to_global_device
-from .analysis import get_recording_files
+from scripts.analysis import  get_recording_files
 
 
-
-RESULTS_ROOT = "data/results/decomposition"
+RESULTS_ROOT = "data/results/rel_vs_coord"
 
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
@@ -25,6 +24,8 @@ _logger = logging.getLogger(__name__)
 
 def init_model(model_name, verbose=False):
     model = timm.create_model(model_name, pretrained=True, cache_dir="data/models/")  # type: ignore
+    model = to_global_device(model)
+
     if verbose:
         print(model)
 
@@ -37,12 +38,9 @@ def record_from_model(
     model: tuple[str, torch.nn.Module],
     metric: str,
     annotations_file: str,
-    shape_type: str,
     results_folder: Path,
 ):
     model_name, net = model
-
-    net = to_global_device(net)
 
     transform_fn = transforms.Compose([
         transforms.Resize(net.pretrained_cfg['input_size'][-1]),  # type: ignore
@@ -57,15 +55,16 @@ def record_from_model(
 
     recorder = RecordDistance(
         annotations_file,
-        factor_variable='SplitType',
-        reference_level='no_split',
-        match_factors=['LeftShape', 'RightShape'],
-        non_match_factors=[],
-        filter_factor_level={'ShapeType': shape_type},
+        factor_variable='Class',
+        reference_level='basis',
+        match_factors=['Id'],
+        non_match_factors=[],  # don't know what this should be
+        filter_factor_level={},
         distance_metric=metric,
         net=net,
         only_save=["Conv2d", "Linear"],
     )
+
 
     distance_df, layer_names = recorder.compute_from_annotation(
         transform_fn,
@@ -77,7 +76,7 @@ def record_from_model(
             'scale': [1.0, 1.5],
             'rotation': [0, 360],
         },
-        transformed_repetition=5,
+        transformed_repetition=20,
         path_save_fig=results_folder,
         add_columns=[],
     )
@@ -89,12 +88,11 @@ def record_from_model(
     return recordings_file_path
 
 
-def record_all(annotations_file, shape_type, models, model_names, results_folder):
+def record_all(annotations_file, models, model_names, results_folder):
     record = partial(
         record_from_model,
         metric= "cossim",
         annotations_file=annotations_file,
-        shape_type=shape_type,
         results_folder=results_folder,
     )
 
@@ -107,15 +105,16 @@ def record_all(annotations_file, shape_type, models, model_names, results_folder
 
 def main(
     annotations_file,
-    shape_type,
     model_names,
     save_folder='',
     overwrite_recordings=False,
-    comparison_levels=None,
 ):
     _logger.info("Loading models...")
 
-    results_folder = Path(RESULTS_ROOT) / shape_type
+    results_folder = Path(RESULTS_ROOT)
+    if save_folder != '':
+        results_folder = results_folder / save_folder
+
     if save_folder != '':
         results_folder = results_folder / save_folder
 
@@ -126,13 +125,9 @@ def main(
         models = [init_model(m) for m in model_names]
         results_folder.mkdir(parents=True, exist_ok=True)
         _logger.info(f"Set results root folder to {RESULTS_ROOT}")
-        recording_files = record_all(
-            annotations_file, shape_type, models, model_names, results_folder
-        )
+        recording_files = record_all(annotations_file, models, model_names, results_folder)
     else:
         recording_files = get_recording_files(results_folder, model_names)
-
-    # analyize_all(recording_files, comparison_levels, start_from=0)
 
 
 if __name__ == "__main__":
@@ -144,17 +139,8 @@ if __name__ == "__main__":
     parser.add_argument("--annotations_file", type=str,
         help="Path to the annotations file used to run the experiment."
     )
-    parser.add_argument("--shape_type", type=str, choices=['familiar', 'unfamiliar'],
-        help="Type of shapes to test between familiar and unfamiliar"
-    )
     parser.add_argument("--save_folder", type=str, default='',
         help="Experiment folder where to store all results"
-    )
-    parser.add_argument("--overwrite_recordings", action='store_true',
-        help="Overwrite the recording file if it all already exists"
-    )
-    parser.add_argument("--comparison_levels", type=str, nargs="+", default=None,
-        help=""
     )
 
     args = parser.parse_args()

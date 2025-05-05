@@ -11,7 +11,7 @@ import torchvision.transforms as transforms
 sys.path.append("mindset/")
 from mindset.src.utils.similarity_judgment.activation_recorder import RecordDistance
 from mindset.src.utils.device_utils import set_global_device, to_global_device, GLOBAL_DEVICE
-from .analysis import get_recording_files
+from scripts.analysis import get_recording_files
 
 
 RESULTS_ROOT = "data/results/emergent_features"

@@ -9,6 +9,15 @@ DEIT="deit3_base_patch16_224.fb_in1k deit3_medium_patch16_224.fb_in1k deit3_larg
 SWIN="swin_base_patch4_window7_224.ms_in1k swinv2_base_window12_192.ms_in22k swin_s3_base_224.ms_in1k"
 FOCALNET="focalnet_base_lrf focalnet_large_fl3.ms_in22k focalnet_xlarge_fl3.ms_in22k"
 
-uv run python -m scripts.amodal_completion \
-  --annotations "data/datasets/full/low_mid_level_vision/amodal_completion/annotation.csv" \
-  --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET  --overwrite_recordings
+
+# Crowding
+uv run python -m scripts.low_mid_vis.crowding \
+  --annotations "data/datasets/full/low_mid_level_vision/crowding/annotation.csv" \
+  --type "crowding" \
+  --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET
+
+# Uncrowding
+uv run python -m scripts.low_mid_vis.crowding \
+  --annotations "data/datasets/full/low_mid_level_vision/crowding/annotation.csv" \
+  --type "uncrowding" \
+  --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET

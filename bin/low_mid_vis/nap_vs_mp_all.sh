@@ -11,26 +11,26 @@ FOCALNET="focalnet_base_lrf focalnet_large_fl3.ms_in22k focalnet_xlarge_fl3.ms_i
 
 
 
-# # NAP_vs_MP_3D_geons_standard
-# uv run python -m scripts.nap_vs_mp_change \
-#   --annotations "data/datasets/full/low_mid_level_vision/NAP_vs_MP_3D_geons_standard/annotation.csv" \
-#   --change_type geons_standard \
-#   --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET
+# NAP_vs_MP_3D_geons_standard
+uv run python -m scripts.low_mid_vis.nap_vs_mp_change \
+  --annotations "data/datasets/full/low_mid_level_vision/NAP_vs_MP_3D_geons_standard/annotation.csv" \
+  --change_type geons_standard \
+  --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET
 
 # NAP_vs_MP_3D_geons_no_shades
-# uv run python -m scripts.nap_vs_mp_change \
-#   --annotations "data/datasets/full/low_mid_level_vision/NAP_vs_MP_3D_geons_no_shades/annotation.csv" \
-#   --change_type geons_no_shades \
-#   --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET
+uv run python -m scripts.low_mid_vis.nap_vs_mp_change \
+  --annotations "data/datasets/full/low_mid_level_vision/NAP_vs_MP_3D_geons_no_shades/annotation.csv" \
+  --change_type geons_no_shades \
+  --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET
 
 # NAP_vs_MP_2D_lines
-uv run python -m scripts.nap_vs_mp_change \
+uv run python -m scripts.low_mid_vis.nap_vs_mp_change \
   --annotations "data/datasets/full/low_mid_level_vision/NAP_vs_MP_2D_lines/annotation.csv" \
   --change_type 2d_lines \
   --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET
 
 #NAP_vs_MP_3D_geons_silhouette
-uv run python -m scripts.nap_vs_mp_change \
+uv run python -m scripts.low_mid_vis.nap_vs_mp_change \
   --annotations "data/datasets/full/low_mid_level_vision/NAP_vs_MP_3D_geons_silhouettes/annotation.csv" \
   --change_type 2d_lines \
   --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET

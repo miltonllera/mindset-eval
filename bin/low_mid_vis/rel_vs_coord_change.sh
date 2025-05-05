@@ -10,6 +10,6 @@ SWIN="swin_base_patch4_window7_224.ms_in1k swinv2_base_window12_192.ms_in22k swi
 FOCALNET="focalnet_base_lrf focalnet_large_fl3.ms_in22k focalnet_xlarge_fl3.ms_in22k"
 
 
-uv run python -m scripts.depth_drawings \
-  --annotations "data/datasets/full/low_mid_level_vision/depth_drawings/annotation.csv" \
+uv run python -m scripts.low_mid_vis.rel_vs_coord \
+  --annotations "data/datasets/full/low_mid_level_vision/relational_vs_coordinate/annotation.csv" \
   --models $RESNET50 $RESNEXT101 $CONVNEXT $VIT $DEIT $SWIN $FOCALNET

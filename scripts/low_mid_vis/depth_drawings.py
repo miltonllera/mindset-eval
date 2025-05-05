@@ -11,10 +11,10 @@ import torchvision.transforms as transforms
 sys.path.append("mindset/")
 from mindset.src.utils.similarity_judgment.activation_recorder import RecordDistance
 from mindset.src.utils.device_utils import set_global_device, to_global_device
-from .analysis import  get_recording_files
+from scripts.analysis import get_recording_files
 
 
-RESULTS_ROOT = "data/results/amodal_completion"
+RESULTS_ROOT = "data/results/depth_drawings"
 
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
@@ -55,10 +55,10 @@ def record_from_model(
 
     recorder = RecordDistance(
         annotations_file,
-        factor_variable='Type',
-        reference_level='no_occlusion',
-        match_factors=['TopShape', 'SampleId'],
-        non_match_factors=[],  # don't know what this should be
+        factor_variable='Class',
+        reference_level='basis',
+        match_factors=[],
+        non_match_factors=[],
         filter_factor_level={},
         distance_metric=metric,
         net=net,
@@ -75,7 +75,7 @@ def record_from_model(
             'scale': [1.0, 1.5],
             'rotation': [0, 360],
         },
-        transformed_repetition=20,
+        transformed_repetition=5,
         path_save_fig=results_folder,
         add_columns=[],
     )
@@ -107,7 +107,6 @@ def main(
     model_names,
     save_folder='',
     overwrite_recordings=False,
-    comparison_levels=None,
 ):
     _logger.info("Loading models...")
 
@@ -115,7 +114,7 @@ def main(
     if save_folder != '':
         results_folder = results_folder / save_folder
 
-    device = 'cpu'
+    device = 0 if torch.cuda.is_available() else 'cpu'
     set_global_device(device)
 
     if not results_folder.exists() or overwrite_recordings:
@@ -125,8 +124,6 @@ def main(
         recording_files = record_all(annotations_file, models, model_names, results_folder)
     else:
         recording_files = get_recording_files(results_folder, model_names)
-
-    # analyize_all(recording_files, comparison_levels, start_from=0)
 
 
 if __name__ == "__main__":
@@ -143,9 +140,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--overwrite_recordings", action='store_true',
         help="Overwrite the recording file if it all already exists"
-    )
-    parser.add_argument("--comparison_levels", type=str, nargs="+", default=None,
-        help=""
     )
 
     args = parser.parse_args()
