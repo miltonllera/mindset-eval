@@ -57,7 +57,7 @@ def record_from_model(
         annotations_file,
         factor_variable='Type',
         reference_level='no_occlusion',
-        match_factors=['TopShape'],
+        match_factors=['TopShape', 'SampleId'],
         non_match_factors=[],  # don't know what this should be
         filter_factor_level={},
         distance_metric=metric,
