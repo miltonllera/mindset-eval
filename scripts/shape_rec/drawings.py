@@ -7,7 +7,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import timm
-import torchvision.transforms as transforms
 import pandas as pd
 import sty
 from tqdm import tqdm
@@ -15,10 +14,9 @@ from tqdm import tqdm
 sys.path.append("mindset/")
 from mindset.src.utils.dataset_utils import get_dataloader, ImageNetClasses
 from mindset.src.utils.device_utils import set_global_device, to_global_device
-from scripts.analysis import  get_recording_files
 
 
-RESULTS_ROOT = "data/results/rel_vs_coord"
+RESULTS_ROOT = "data/results/drawings"
 
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
@@ -40,7 +38,7 @@ def init_model(model_name, verbose=False):
 
 def evaluate_model(
     model: tuple[str, torch.nn.Module],
-    metric: str,
+    dataset_name,
     annotations_file: str,
     results_folder: Path,
 ):
@@ -54,17 +52,25 @@ def evaluate_model(
     dataloader = get_dataloader(
         task_type='classification',
         ds_config={
-            'name': "line-drawings",
-            'annotations_file': annotations_file,
+            'name': dataset_name,
+            'annotation_file': annotations_file,
             'img_path_col_name': "Path",
-            'label_cols': ...,
+            'label_cols': "Class",
             'filters': [],
         },
-        transf_config=None,
+        transf_config={
+            'values': {
+                'translation_X': [-0.2, 0.2],
+                'translation_Y': [-0.2, 0.2],
+                'scale': [1.0, 1.2],
+                'rotation': [0, 360],
+            },
+            'fill_color': (0, 0, 0),
+        },
         batch_size=10,
-        return_path=False,
+        return_path=True,
     )
-    imagenet_classes = ImageNetClasses()
+    imagenet_classes = ImageNetClasses(class_index_json_file="mindset/assets/imagenet_class_index.json")
 
     results_final = []
     results_path = results_folder / dataloader.dataset.name  # type: ignore
@@ -134,10 +140,10 @@ def evaluate_model(
     return results_path
 
 
-def evaluate_all(annotations_file, models, model_names, results_folder):
+def evaluate_all(dataset_name, annotations_file, models, model_names, results_folder):
     record = partial(
         evaluate_model,
-        metric= "cossim",
+        dataset_name=dataset_name,
         annotations_file=annotations_file,
         results_folder=results_folder,
     )
@@ -150,19 +156,14 @@ def evaluate_all(annotations_file, models, model_names, results_folder):
 
 
 def main(
+    drawing_type: str,
     annotations_file,
     model_names,
-    save_folder='',
     overwrite_recordings=False,
 ):
     _logger.info("Loading models...")
 
-    results_folder = Path(RESULTS_ROOT)
-    if save_folder != '':
-        results_folder = results_folder / save_folder
-
-    if save_folder != '':
-        results_folder = results_folder / save_folder
+    results_folder = Path(RESULTS_ROOT) / drawing_type
 
     device = 'cpu'
     set_global_device(device)
@@ -171,7 +172,7 @@ def main(
         models = [init_model(m) for m in model_names]
         results_folder.mkdir(parents=True, exist_ok=True)
         _logger.info(f"Set results root folder to {RESULTS_ROOT}")
-        evaluate_all(annotations_file, models, model_names, results_folder)
+        evaluate_all(drawing_type, annotations_file, models, model_names, results_folder)
 
 
 if __name__ == "__main__":
@@ -180,11 +181,15 @@ if __name__ == "__main__":
     parser.add_argument("--models", type=str, nargs='+', dest='model_names',
         help="List of models to test"
     )
+    parser.add_argument("--drawing_type", type=str,
+        choices=['line', 'dotted', 'silhouettes', 'texture_lines', 'texture_chars'],
+        help="Type of drawing"
+    )
     parser.add_argument("--annotations_file", type=str,
         help="Path to the annotations file used to run the experiment."
     )
-    parser.add_argument("--save_folder", type=str, default='',
-        help="Experiment folder where to store all results"
+    parser.add_argument("--overwrite_recordings", action='store_true',
+        help="Overwrite the recording file if it all already exists"
     )
 
     args = parser.parse_args()
