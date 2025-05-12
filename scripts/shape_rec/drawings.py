@@ -66,6 +66,7 @@ def evaluate_model(
                 'rotation': [0, 360],
             },
             'fill_color': (0, 0, 0),
+            'size': net.pretrained_cfg['input_size'][-1],  # type: ignore
         },
         batch_size=10,
         return_path=True,
@@ -91,14 +92,13 @@ def evaluate_model(
         for i in range(len(labels)):
             # Top 5 prediction
             prediction = torch.topk(output[i], 5).indices.tolist()
+            label_raw = dataloader.dataset.idx2label(labels[i].item())  # type: ignore
 
             results_final.append(
                 {
                     "image_path": path[i],
-                    "label_idx": labels[i].item(),
-                    "label_class_name": imagenet_classes.idx2label[
-                        labels[i].item()
-                    ],
+                    "label_idx": imagenet_classes.label2idx[label_raw],
+                    "label_class_name": label_raw,
                     **{f"prediction_idx_top_{i}": prediction[i] for i in range(5)},
                     **{
                         f"prediction_class_name_top_{i}": imagenet_classes.idx2label[

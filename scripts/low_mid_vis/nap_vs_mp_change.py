@@ -105,7 +105,7 @@ def record_all(annotations_file, models, model_names, results_folder):
 
 def main(
     annotations_file,
-    change_type,
+    shape_type,
     model_names,
     save_folder='',
     overwrite_recordings=False,
@@ -113,7 +113,7 @@ def main(
 ):
     _logger.info("Loading models...")
 
-    results_folder = Path(RESULTS_ROOT) / change_type
+    results_folder = Path(RESULTS_ROOT) / shape_type
     if save_folder != '':
         results_folder = results_folder / save_folder
 
@@ -140,7 +140,8 @@ if __name__ == "__main__":
     parser.add_argument("--annotations_file", type=str,
         help="Path to the annotations file used to run the experiment."
     )
-    parser.add_argument("--change_type", type=str,
+    parser.add_argument("--shape_type", type=str,
+        choices=["2d_lines", "geons_standard", "geons_no_shades", "silhouettes"],
         help="Change type applied to the basis images"
     )
     parser.add_argument("--save_folder", type=str, default='',

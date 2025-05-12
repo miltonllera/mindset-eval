@@ -55,9 +55,9 @@ def record_from_model(
 
     recorder = RecordDistance(
         annotations_file,
-        factor_variable='Class',
-        reference_level='basis',
-        match_factors=['Id'],
+        factor_variable='Id',
+        reference_level=1,
+        match_factors=['Class'],
         non_match_factors=[],
         filter_factor_level={},
         distance_metric=metric,
