@@ -68,7 +68,7 @@ def train_decoders(
                 loss.backward()
                 o.step()
 
-            extracted_features = extracted_features.clear()  # type: ignore
+            decoder_wrapper.clear_features()
 
     return decoder_wrapper
 
@@ -77,7 +77,6 @@ def train_decoders(
 
 def evaluate_decoder(
     model: tuple[str, torch.nn.Module],
-    dataset_name,
     annotations_file: str,
     results_folder: Path,
     retrain_decoder: bool = False,
@@ -97,15 +96,16 @@ def evaluate_decoder(
             'rotation': [0, 360],
         },
         'fill_color': (0, 0, 0),
+        'size': net.pretrained_cfg['input_size'][-1],  # type: ignore
     }
 
     dataloader = get_dataloader(
         task_type='regression',
         ds_config={
-            'name': dataset_name,
+            'name': "ebbinghaus_illusion",
             'annotation_file': annotations_file,
             'img_path_col_name': "Path",
-            'label_cols': [""],
+            'label_cols': "NormSizeCenterCircle",
             'filters': {'Category': "scrambled_circles"},
         },
         transf_config=transf_config,
@@ -121,15 +121,16 @@ def evaluate_decoder(
         train_loader = get_dataloader(
             task_type='regression',
             ds_config={
-                'name': dataset_name,
+                'name': "ebbinghaus_illusion",
                 'annotation_file': annotations_file,
                 'img_path_col_name': "Path",
-                'label_cols': ["PolygonId"],
-                'filters': {'Category': ["big_flankers", "small_flankers"]},
+                'label_cols': "NormSizeCenterCircle",
+                'filters': {},
+                'neg_filters': {'Category': "scrambled_circles"},
             },
             transf_config=transf_config,
             batch_size=64,
-            return_path=True,
+            return_path=False,
         )
 
         decoder_wrapper = train_decoders(
@@ -173,10 +174,9 @@ def evaluate_decoder(
     return results_folder
 
 
-def evaluate_all(dataset_name, annotations_file, models, model_names, results_folder):
+def evaluate_all(annotations_file, models, model_names, results_folder):
     record = partial(
         evaluate_decoder,
-        dataset_name=dataset_name,
         annotations_file=annotations_file,
         results_folder=results_folder,
     )
@@ -189,14 +189,13 @@ def evaluate_all(dataset_name, annotations_file, models, model_names, results_fo
 
 
 def main(
-    drawing_type: str,
     annotations_file,
     model_names,
     overwrite_recordings=False,
 ):
     _logger.info("Loading models...")
 
-    results_folder = Path(RESULTS_ROOT) / drawing_type
+    results_folder = Path(RESULTS_ROOT)
 
     device = 'cpu'
     set_global_device(device)
@@ -205,7 +204,7 @@ def main(
         models = [init_model(m) for m in model_names]
         results_folder.mkdir(parents=True, exist_ok=True)
         _logger.info(f"Set results root folder to {RESULTS_ROOT}")
-        evaluate_all(drawing_type, annotations_file, models, model_names, results_folder)
+        evaluate_all(annotations_file, models, model_names, results_folder)
 
 
 if __name__ == "__main__":

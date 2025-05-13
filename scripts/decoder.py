@@ -35,3 +35,6 @@ class DecoderWrapper(nn.Module):
             decoder_preds.append(dec(features))
         self.extracted_features.clear()
         return decoder_preds
+
+    def clear_features(self):
+        self.extracted_features.clear()
