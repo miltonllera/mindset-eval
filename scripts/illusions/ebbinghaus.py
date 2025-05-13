@@ -21,7 +21,7 @@ from mindset.src.utils.dataset_utils import get_dataloader
 from mindset.src.utils.device_utils import set_global_device, to_global_device
 
 
-RESULTS_ROOT = "data/results/drawings"
+RESULTS_ROOT = "data/results/ebbinghaus"
 
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
@@ -47,8 +47,10 @@ def train_decoders(
     train_loader: DataLoader,
     learning_rate: float,
     train_epochs: int,
+    save_path: Path,
 ):
-    decoder_wrapper = DecoderWrapper(model, target_dim)
+    device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
+    decoder_wrapper = DecoderWrapper(model, target_dim).to(device)
 
     optimizers = []
     for dec in decoder_wrapper.decoders.values():
@@ -57,9 +59,10 @@ def train_decoders(
 
     loss_fn = nn.MSELoss()
 
-
     for _ in range(train_epochs):
-        for x, y in train_loader:
+        pbar = tqdm(train_loader, desc="Decoder Training")
+        for x, y in pbar:
+            x, y = x.to(device), y.to(device)
             decoder_preds = decoder_wrapper(x)
 
             for pred, o in zip(decoder_preds, optimizers):
@@ -68,7 +71,8 @@ def train_decoders(
                 loss.backward()
                 o.step()
 
-            decoder_wrapper.clear_features()
+    decoder_wrapper = decoder_wrapper.to(torch.device('cpu'))
+    torch.save(decoder_wrapper.state_dict(), save_path)
 
     return decoder_wrapper
 
@@ -134,10 +138,13 @@ def evaluate_decoder(
         )
 
         decoder_wrapper = train_decoders(
-            net, target_dim, train_loader, learning_rate=1e-5, train_epochs=20
+            net, target_dim, train_loader,
+            learning_rate=1e-5,
+            train_epochs=20,
+            save_path=decoder_ckpt,
         )
     else:
-        decoder_wrapper = DecoderWrapper(model, target_dim)
+        decoder_wrapper = DecoderWrapper(net, target_dim)
         decoder_wrapper.load_state_dict(torch.load(decoder_ckpt))
 
 
@@ -222,5 +229,3 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(**vars(args))
-
-

@@ -10,6 +10,5 @@ FOCALNET="focalnet_base_lrf.ms_in1k focalnet_base_srf.ms_in1k"
 
 
 uv run python -m scripts.illusions.ebbinghaus \
-  --annotations "data/datasets/visual_illusions/ebbinghaus_illusion/annotation.csv" \
-  --models $RESNET --overwrite_recordings
-  # --models $RESNET $RESNEXT $CONVNEXT $VIT $DEIT $SWIN $FOCALNET --overwrite_recordings
+  --annotations "data/datasets/full/visual_illusions/ebbinghaus_illusion/annotation.csv" \
+  --models $RESNET $RESNEXT $CONVNEXT $VIT $DEIT $SWIN $FOCALNET --overwrite_recordings

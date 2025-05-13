@@ -22,22 +22,13 @@ class DecoderWrapper(nn.Module):
                 m.register_forward_hook(hook_fn)
         model(sample_input)
 
-        i = 0
-        for m in modules:
-            if isinstance(m, nn.Linear):
-                input_dims = extracted_features[i].numel()
-                dec = nn.Linear(input_dims, target_dim)
-                decoders[f"Decoder_{i}"] = dec
-                i += 1
-            elif isinstance(m, nn.Conv2d):
-                input_dims = extracted_features[i].numel()
-                dec = nn.Sequential(
-                    vnn.Permute([0, 2, 3, 1]),
-                    nn.Flatten(1, -1),
-                    nn.Linear(input_dims, target_dim)
-                )
-                decoders[f"Decoder_{i}"] = dec
-                i += 1
+        for i, features in enumerate(extracted_features):
+            input_dims = features.numel()
+            dec = nn.Sequential(
+                nn.Flatten(1, -1),
+                nn.Linear(input_dims, target_dim)
+            )
+            decoders[f"Decoder_{i}"] = dec
 
         extracted_features.clear()
 
