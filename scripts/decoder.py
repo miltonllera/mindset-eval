@@ -18,7 +18,7 @@ class DecoderWrapper(nn.Module):
             extracted_features.append(output.detach())
 
         for i, m in enumerate(modules):
-            if isinstance(m,  (nn.Conv2d, nn.Linear)):
+            if isinstance(m, nn.Linear):
                 m.register_forward_hook(hook_fn)
         model(sample_input)
 
