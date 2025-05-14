@@ -20,7 +20,7 @@ from mindset.src.utils.dataset_utils import get_dataloader
 from mindset.src.utils.device_utils import set_global_device, to_global_device
 
 
-RESULTS_ROOT = "data/results/muller_lyer"
+RESULTS_ROOT = "data/results/jastrow"
 
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
@@ -105,11 +105,11 @@ def evaluate_decoder(
     dataloader = get_dataloader(
         task_type='regression',
         ds_config={
-            'name': "muller_lyer_illusion",
+            'name': "jastrow_illusion",
             'annotation_file': annotations_file,
             'img_path_col_name': "Path",
-            'label_cols': "LineLength",
-            'filters': {'Type': "scrambled"},
+            'label_cols': ["SizeRed", "SizeBlue"],
+            'filters': {'Type': "random"},
         },
         transf_config=transf_config,
         batch_size=100,
@@ -124,12 +124,12 @@ def evaluate_decoder(
         train_loader = get_dataloader(
             task_type='regression',
             ds_config={
-                'name': "muller_lyer_illusion",
+                'name': "jastrow_illusion",
                 'annotation_file': annotations_file,
                 'img_path_col_name': "Path",
-                'label_cols': "LineLength",
+                'label_cols': ["SizeRed", "SizeBlue"],
+                'neg_filters': {'Type': "random"},
                 'filters': {},
-                'neg_filters': {'Type': "scrambled"},
             },
             transf_config=transf_config,
             batch_size=64,
@@ -163,15 +163,21 @@ def evaluate_decoder(
         output = decoder_wrapper(images)
 
         for i in range(len(targets)):
-            results_final.append({
-                    "image_path": path[i],
-                    "label": targets[i].item(),
-                    **{
-                        f"prediction_dec_{dec_idx}": (output[dec_idx][i].item())
-                        for dec_idx in range(len(decoder_wrapper.decoders))
-                    },
-                }
-            )
+            results_dict = {
+                'image_path': path[i],
+                'target_size_red': targets[i][0].item(),
+                'target_size_blue': targets[i][1].item(),
+                **{
+                    f"prediction_size_red_dec_{dec_idx}": output[dec_idx][i][0].item()
+                    for dec_idx in range(len(decoder_wrapper.decoders))
+                },
+                **{
+                    f"prediction_size_blue_dec_{dec_idx}": output[dec_idx][i][1].item()
+                    for dec_idx in range(len(decoder_wrapper.decoders))
+                },
+            }
+
+            results_final.append(results_dict)
 
     results_final_pandas = pd.DataFrame(results_final)
     results_final_pandas.to_csv(results_folder / "predictions.csv", index=False)
@@ -227,5 +233,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     main(**vars(args))
+
 
 

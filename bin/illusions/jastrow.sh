@@ -9,6 +9,7 @@ DEIT="deit3_base_patch16_224.fb_in1k deit3_medium_patch16_224.fb_in1k deit3_larg
 FOCALNET="focalnet_base_lrf.ms_in1k focalnet_base_srf.ms_in1k"
 
 
-uv run python -m scripts.illusions.ponzo \
-  --annotations "data/datasets/full/visual_illusions/ponzo_illusion/annotation.csv" \
+uv run python -m scripts.illusions.jastrow \
+  --annotations "data/datasets/full/visual_illusions/jastrow_illusion/annotation.csv" \
   --models $RESNET $RESNEXT $CONVNEXT $VIT $DEIT $FOCALNET --overwrite_recordings
+

@@ -163,16 +163,15 @@ def evaluate_decoder(
         output = decoder_wrapper(images)
 
         for i in range(len(targets)):
-            for i in range(len(targets)):
-                results_final.append({
-                        "image_path": path[i],
-                        "label": targets[i].item(),
-                        **{
-                            f"prediction_dec_{dec_idx}": (output[dec_idx][i].item())
-                            for dec_idx in range(len(decoder_wrapper.decoders))
-                        },
-                    }
-                )
+            results_final.append({
+                    "image_path": path[i],
+                    "label": targets[i].item(),
+                    **{
+                        f"prediction_dec_{dec_idx}": (output[dec_idx][i].item())
+                        for dec_idx in range(len(decoder_wrapper.decoders))
+                    },
+                }
+            )
 
     results_final_pandas = pd.DataFrame(results_final)
     results_final_pandas.to_csv(results_folder / "predictions.csv", index=False)
