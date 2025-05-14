@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 import torchvision.ops as vnn
+import lightning.pytorch as pl
 
 
-class DecoderWrapper(nn.Module):
+class DecoderWrapper(pl.LightningModule):
     def __init__(self, model: nn.Module, target_dim: int) -> None:
         super().__init__()
 
@@ -18,7 +19,7 @@ class DecoderWrapper(nn.Module):
             extracted_features.append(output.detach())
 
         for i, m in enumerate(modules):
-            if isinstance(m, nn.Linear):
+            if isinstance(m, (nn.Linear, nn.Conv2d)):
                 m.register_forward_hook(hook_fn)
         model(sample_input)
 
@@ -38,6 +39,7 @@ class DecoderWrapper(nn.Module):
         self.model = model
         self.decoders = decoders
         self.extracted_features = extracted_features
+        self.loss_fn = nn.MSELoss()
 
     def forward(self, x):
         self.model(x)
@@ -46,6 +48,33 @@ class DecoderWrapper(nn.Module):
             decoder_preds.append(dec(features))
         self.extracted_features.clear()
         return decoder_preds
+
+    def training_step(self, batch):  # type: ignore
+        x, y = batch
+        decoder_preds = self.forward(x)
+
+        loss = 0.0
+        for preds in decoder_preds:
+            dec_loss = self.loss_fn(preds, y)
+            loss += dec_loss
+
+        self.log_dict({'loss': loss})
+
+        return loss
+
+    def predict_step(self, batch):
+        x, y = batch
+        decoder_preds = self.forward(x)
+
+        losses = {}
+        for layer_name, preds in zip(self.decoders, decoder_preds):
+            dec_loss = self.loss_fn(preds, y)
+            losses[layer_name] = dec_loss.item()
+
+        return losses
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=1e-5)
 
     def clear_features(self):
         self.extracted_features.clear()

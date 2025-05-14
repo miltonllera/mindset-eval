@@ -6,7 +6,8 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-import torch.optim  as optim
+import lightning.pytorch as pl
+import lightning.pytorch.callbacks as callbacks
 import timm
 import pandas as pd
 import sty
@@ -44,34 +45,23 @@ def train_decoders(
     model: nn.Module,
     target_dim: int,
     train_loader: DataLoader,
-    learning_rate: float,
     train_epochs: int,
     save_path: Path,
 ):
-    device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-    decoder_wrapper = DecoderWrapper(model, target_dim).to(device)
+    decoder_wrapper = DecoderWrapper(model, target_dim)
 
-    optimizers = []
-    for dec in decoder_wrapper.decoders.values():
-        o = optim.Adam(dec.parameters(), lr=learning_rate)
-        optimizers.append(o)
+    checkpointer = callbacks.ModelCheckpoint(
+        monitor="loss",        # metric to monitor
+        filename="decoder_ckpt.pt",
+        save_top_k=1,              # only keep best
+        mode="min",
+        dirpath=save_path,
+    )
 
-    loss_fn = nn.MSELoss()
-
-    for _ in range(train_epochs):
-        pbar = tqdm(train_loader, desc="Decoder Training")
-        for x, y in pbar:
-            x, y = x.to(device), y.to(device)
-            decoder_preds = decoder_wrapper(x)
-
-            for pred, o in zip(decoder_preds, optimizers):
-                loss = loss_fn(pred, y)
-                o.zero_grad()
-                loss.backward()
-                o.step()
+    trainer = pl.Trainer(max_epochs=train_epochs, callbacks=[checkpointer])
+    trainer.fit(decoder_wrapper, train_loader)
 
     decoder_wrapper = decoder_wrapper.to(torch.device('cpu'))
-    torch.save(decoder_wrapper.state_dict(), save_path)
 
     return decoder_wrapper
 
@@ -119,7 +109,7 @@ def evaluate_decoder(
     target_dim = next(iter(dataloader))[1].shape[-1]
 
     # train decoders if not available
-    decoder_ckpt = results_folder / 'decoder_ckpt.pt'
+    decoder_ckpt = results_folder / 'decoder.ckpt'
     if not decoder_ckpt.exists() or retrain_decoder:
         train_loader = get_dataloader(
             task_type='regression',
@@ -138,14 +128,11 @@ def evaluate_decoder(
 
         decoder_wrapper = train_decoders(
             net, target_dim, train_loader,
-            learning_rate=1e-5,
             train_epochs=20,
-            save_path=decoder_ckpt,
+            save_path=results_folder,
         )
     else:
-        decoder_wrapper = DecoderWrapper(net, target_dim)
-        decoder_wrapper.load_state_dict(torch.load(decoder_ckpt))
-
+        decoder_wrapper = DecoderWrapper.load_from_checkpoint(results_folder / 'decoder.ckpt')
 
     # evaluate the decoders
     print(

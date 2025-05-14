@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-import torch.optim  as optim
+import lightning.pytorch as pl
 import timm
 import pandas as pd
 import sty
@@ -44,31 +44,12 @@ def train_decoders(
     model: nn.Module,
     target_dim: int,
     train_loader: DataLoader,
-    learning_rate: float,
     train_epochs: int,
     save_path: Path,
 ):
-    device = torch.device('cuda:0') if torch.cuda.is_available() else torch.device('cpu')
-    decoder_wrapper = DecoderWrapper(model, target_dim).to(device)
-
-    optimizers = []
-    for dec in decoder_wrapper.decoders.values():
-        o = optim.Adam(dec.parameters(), lr=learning_rate)
-        optimizers.append(o)
-
-    loss_fn = nn.MSELoss()
-
-    for _ in range(train_epochs):
-        pbar = tqdm(train_loader, desc="Decoder Training")
-        for x, y in pbar:
-            x, y = x.to(device), y.to(device)
-            decoder_preds = decoder_wrapper(x)
-
-            for pred, o in zip(decoder_preds, optimizers):
-                loss = loss_fn(pred, y)
-                o.zero_grad()
-                loss.backward()
-                o.step()
+    decoder_wrapper = DecoderWrapper(model, target_dim)
+    trainer = pl.Trainer(max_epochs=train_epochs)
+    trainer.fit(decoder_wrapper, train_loader)
 
     decoder_wrapper = decoder_wrapper.to(torch.device('cpu'))
     torch.save(decoder_wrapper.state_dict(), save_path)
