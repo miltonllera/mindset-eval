@@ -98,6 +98,7 @@ def evaluate_decoder(
             'img_path_col_name': "Path",
             'label_cols': "NormSizeCenterCircle",
             'filters': {'Category': "scrambled_circles"},
+            'neg_filters': {},
         },
         transf_config=transf_config,
         batch_size=100,
@@ -107,7 +108,7 @@ def evaluate_decoder(
     target_dim = next(iter(dataloader))[1].shape[-1]
 
     # train decoders if not available
-    decoder_ckpt = results_folder / 'decoder_ckpt.pt'
+    decoder_ckpt = results_folder / 'decoder_ckpt.pt.ckpt'
     if not decoder_ckpt.exists() or retrain_decoder:
         train_loader = get_dataloader(
             task_type='regression',
@@ -130,7 +131,12 @@ def evaluate_decoder(
             save_path=results_folder,
         )
     else:
-        decoder_wrapper = DecoderWrapper.load_from_checkpoint(results_folder / 'decoder_ckpt.pt')
+        decoder_wrapper = DecoderWrapper.load_from_checkpoint(
+            results_folder / 'decoder_ckpt.pt.ckpt',
+            map_location=torch.device('cpu'),
+            model=net,
+            target_dim=target_dim,
+        )
 
     # evaluate the decoders
     print(
