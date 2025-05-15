@@ -58,7 +58,7 @@ class DecoderWrapper(pl.LightningModule):
             dec_loss = self.loss_fn(preds, y)
             loss += dec_loss
 
-        self.log_dict({'loss': loss})
+        self.log_dict({'loss': loss / len(decoder_preds)}, prog_bar=True)
 
         return loss
 

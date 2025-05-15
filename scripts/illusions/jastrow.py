@@ -97,7 +97,8 @@ def evaluate_decoder(
             'annotation_file': annotations_file,
             'img_path_col_name': "Path",
             'label_cols': ["SizeRed", "SizeBlue"],
-            'filters': {'Type': "random"},
+            'neg_filters': {'Type': "random"},
+            'filters': {},
         },
         transf_config=transf_config,
         batch_size=100,
@@ -107,7 +108,7 @@ def evaluate_decoder(
     target_dim = next(iter(dataloader))[1].shape[-1]
 
     # train decoders if not available
-    decoder_ckpt = results_folder / 'decoder_ckpt.pt'
+    decoder_ckpt = results_folder / 'decoder_ckpt.pt.ckpt'
     if not decoder_ckpt.exists() or retrain_decoder:
         train_loader = get_dataloader(
             task_type='regression',
@@ -115,9 +116,9 @@ def evaluate_decoder(
                 'name': "jastrow_illusion",
                 'annotation_file': annotations_file,
                 'img_path_col_name': "Path",
-                'label_cols': ["SizeRed", "SizeBlue"],
-                'neg_filters': {'Type': "random"},
-                'filters': {},
+                'label_cols': ["SizeTop", "SizeBottom"],
+                'filters': {'Type': "random"},
+                'neg_filters': {},
             },
             transf_config=transf_config,
             batch_size=64,
@@ -130,7 +131,12 @@ def evaluate_decoder(
             save_path=results_folder,
         )
     else:
-        decoder_wrapper = DecoderWrapper.load_from_checkpoint(results_folder / 'decoder_ckpt.pt')
+        decoder_wrapper = DecoderWrapper.load_from_checkpoint(
+            results_folder / 'decoder_ckpt.pt.ckpt',
+            map_location=torch.device('cpu'),
+            model=net,
+            target_dim=target_dim,
+        )
 
     # evaluate the decoders
     print(
@@ -150,14 +156,14 @@ def evaluate_decoder(
         for i in range(len(targets)):
             results_dict = {
                 'image_path': path[i],
-                'target_size_red': targets[i][0].item(),
-                'target_size_blue': targets[i][1].item(),
+                'target_size_top': targets[i][0].item(),
+                'target_size_bottom': targets[i][1].item(),
                 **{
-                    f"prediction_size_red_dec_{dec_idx}": output[dec_idx][i][0].item()
+                    f"prediction_size_top_dec_{dec_idx}": output[dec_idx][i][0].item()
                     for dec_idx in range(len(decoder_wrapper.decoders))
                 },
                 **{
-                    f"prediction_size_blue_dec_{dec_idx}": output[dec_idx][i][1].item()
+                    f"prediction_size_bottom_dec_{dec_idx}": output[dec_idx][i][1].item()
                     for dec_idx in range(len(decoder_wrapper.decoders))
                 },
             }

@@ -58,7 +58,7 @@ def train_decoders(
         dirpath=save_path,
     )
 
-    trainer = pl.Trainer(max_epochs=train_epochs, callbacks=[checkpointer])
+    trainer = pl.Trainer(max_epochs=train_epochs, callbacks=[checkpointer], logger=False)
     trainer.fit(decoder_wrapper, train_loader)
 
     return decoder_wrapper
@@ -97,8 +97,8 @@ def evaluate_decoder(
             'annotation_file': annotations_file,
             'img_path_col_name': "Path",
             'label_cols': "NormSizeCenterCircle",
-            'filters': {'Category': "scrambled_circles"},
-            'neg_filters': {},
+            'neg_filters': {'Category': "scrambled_circles"},
+            'filters': {},
         },
         transf_config=transf_config,
         batch_size=100,
@@ -117,8 +117,8 @@ def evaluate_decoder(
                 'annotation_file': annotations_file,
                 'img_path_col_name': "Path",
                 'label_cols': "NormSizeCenterCircle",
-                'filters': {},
-                'neg_filters': {'Category': "scrambled_circles"},
+                'filters': {'Category': "scrambled_circles"},
+                'neg_filters': {},
             },
             transf_config=transf_config,
             batch_size=64,

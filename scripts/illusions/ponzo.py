@@ -7,6 +7,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import lightning.pytorch as pl
+import lightning.pytorch.callbacks as callbacks
 import timm
 import pandas as pd
 import sty
@@ -48,12 +49,17 @@ def train_decoders(
     save_path: Path,
 ):
     decoder_wrapper = DecoderWrapper(model, target_dim)
-    trainer = pl.Trainer(max_epochs=train_epochs)
+
+    checkpointer = callbacks.ModelCheckpoint(
+        monitor="loss",        # metric to monitor
+        filename="decoder_ckpt.pt",
+        save_top_k=1,              # only keep best
+        mode="min",
+        dirpath=save_path,
+    )
+    trainer = pl.Trainer(max_epochs=train_epochs, callbacks=[checkpointer], logger=False)
+
     trainer.fit(decoder_wrapper, train_loader)
-
-    decoder_wrapper = decoder_wrapper.to(torch.device('cpu'))
-    torch.save(decoder_wrapper.state_dict(), save_path)
-
     return decoder_wrapper
 
 
@@ -89,8 +95,9 @@ def evaluate_decoder(
             'name': "ponzo_illusion",
             'annotation_file': annotations_file,
             'img_path_col_name': "Path",
-            'label_cols': ["RedLength", "BlueLength"],
-            'filters': {'Type': "scrambled_circles"},
+            'label_cols': ["RedLength", "BlueLegnth"],
+            'neg_filters': {'Type': "scrambled_lines"},
+            'filters': {},
         },
         transf_config=transf_config,
         batch_size=100,
@@ -100,7 +107,7 @@ def evaluate_decoder(
     target_dim = next(iter(dataloader))[1].shape[-1]
 
     # train decoders if not available
-    decoder_ckpt = results_folder / 'decoder_ckpt.pt'
+    decoder_ckpt = results_folder / 'decoder_ckpt.pt.ckpt'
     if not decoder_ckpt.exists() or retrain_decoder:
         train_loader = get_dataloader(
             task_type='regression',
@@ -108,9 +115,9 @@ def evaluate_decoder(
                 'name': "ponzo_illusion",
                 'annotation_file': annotations_file,
                 'img_path_col_name': "Path",
-                'label_cols': ["RedLength", "BlueLength"],
-                'filters': {},
-                'neg_filters': {'Type': "scrambled_circles"},
+                'label_cols': ["RedLength", "BlueLegnth"],
+                'filters': {'Type': "scrambled_lines"},
+                'neg_filters': {},
             },
             transf_config=transf_config,
             batch_size=64,
@@ -119,13 +126,16 @@ def evaluate_decoder(
 
         decoder_wrapper = train_decoders(
             net, target_dim, train_loader,
-            learning_rate=1e-5,
             train_epochs=20,
-            save_path=decoder_ckpt,
+            save_path=results_folder,
         )
     else:
-        decoder_wrapper = DecoderWrapper(net, target_dim)
-        decoder_wrapper.load_state_dict(torch.load(decoder_ckpt))
+        decoder_wrapper = DecoderWrapper.load_from_checkpoint(
+            results_folder / 'decoder_ckpt.pt.ckpt',
+            map_location=torch.device('cpu'),
+            model=net,
+            target_dim=target_dim,
+        )
 
 
     # evaluate the decoders
@@ -146,9 +156,14 @@ def evaluate_decoder(
         for i in range(len(targets)):
             results_final.append({
                     "image_path": path[i],
-                    "label": targets[i].item(),
+                    'target_size_top': targets[i][0].item(),
+                    'target_size_bottom': targets[i][1].item(),
                     **{
-                        f"prediction_dec_{dec_idx}": (output[dec_idx][i].item())
+                        f"prediction_size_top_dec_{dec_idx}": output[dec_idx][i][0].item()
+                        for dec_idx in range(len(decoder_wrapper.decoders))
+                    },
+                    **{
+                        f"prediction_size_bottom_dec_{dec_idx}": output[dec_idx][i][1].item()
                         for dec_idx in range(len(decoder_wrapper.decoders))
                     },
                 }
