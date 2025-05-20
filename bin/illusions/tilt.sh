@@ -10,6 +10,6 @@ FOCALNET="focalnet_base_lrf.ms_in1k focalnet_base_srf.ms_in1k"
 
 
 # Face variant
-uv run python -m scripts.illusions.thatcher \
-  --annotations "data/datasets/full/visual_illusions/thatcher_illusion_face/annotation.csv" \
+uv run python -m scripts.illusions.tilt \
+  --annotations "data/datasets/full/visual_illusions/tilt_illusion/annotation.csv" \
   --models $RESNET $RESNEXT $CONVNEXT $VIT $DEIT $FOCALNET --overwrite_recordings
