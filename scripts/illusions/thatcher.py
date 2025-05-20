@@ -36,7 +36,6 @@ def init_model(model_name, verbose=False):
 
 def record_from_model(
     model: tuple[str, torch.nn.Module],
-    condition: str,
     metric: str,
     annotations_file: str,
     results_folder: Path,
@@ -56,17 +55,17 @@ def record_from_model(
 
     recorder = RecordDistance(
         annotations_file,
-        factor_variable='Condition',
-        reference_level=condition,
-        match_factors=['FaceID'],
+        factor_variable='thatcherized',
+        reference_level='no',
+        match_factors=['FaceId', 'Condition'],
         non_match_factors=[],  # don't know what this should be
-        filter_factor_level={'Condition': [condition, f"thatcherized_{condition}"]},
+        filter_factor_level={},
         distance_metric=metric,
         net=net,
         only_save=["Conv2d", "Linear"],
     )
 
-    distance_df, layer_names = recorder.compute_from_annotation(
+    distance_df, _ = recorder.compute_from_annotation(
         transform_fn,
         matching_transform=True,
         fill_bk=[0, 0, 0],
@@ -88,10 +87,9 @@ def record_from_model(
     return recordings_file_path
 
 
-def record_all(annotations_file, condition, models, model_names, results_folder):
+def record_all(annotations_file, models, model_names, results_folder):
     record = partial(
         record_from_model,
-        condition=condition,
         metric= "cossim",
         annotations_file=annotations_file,
         results_folder=results_folder,
@@ -106,14 +104,13 @@ def record_all(annotations_file, condition, models, model_names, results_folder)
 
 def main(
     annotations_file,
-    condition,
     model_names,
     save_folder='',
     overwrite_recordings=False,
 ):
     _logger.info("Loading models...")
 
-    results_folder = Path(RESULTS_ROOT) / condition
+    results_folder = Path(RESULTS_ROOT)
     if save_folder != '':
         results_folder = results_folder / save_folder
 
@@ -124,7 +121,7 @@ def main(
         models = [init_model(m) for m in model_names]
         results_folder.mkdir(parents=True, exist_ok=True)
         _logger.info(f"Set results root folder to {RESULTS_ROOT}")
-        record_all(annotations_file, condition, models, model_names, results_folder)
+        record_all(annotations_file, models, model_names, results_folder)
 
 
 if __name__ == "__main__":
@@ -135,10 +132,6 @@ if __name__ == "__main__":
     )
     parser.add_argument("--annotations_file", type=str,
         help="Path to the annotations file used to run the experiment."
-    )
-    parser.add_argument("--condition", type=str,
-        choices=["straight", "inverted"],
-        help="Change type applied to the basis images"
     )
     parser.add_argument("--save_folder", type=str, default='',
         help="Experiment folder where to store all results"

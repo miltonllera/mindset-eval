@@ -9,13 +9,8 @@ DEIT="deit3_base_patch16_224.fb_in1k deit3_medium_patch16_224.fb_in1k deit3_larg
 FOCALNET="focalnet_base_lrf.ms_in1k focalnet_base_srf.ms_in1k"
 
 
-# Face variant, record for straight and inverted separately
+# Face variant
 uv run python -m scripts.illusions.thatcher \
   --annotations "data/datasets/full/visual_illusions/thatcher_illusion_face/annotation.csv" \
-  --condition 'straight' \
   --models $RESNET $RESNEXT $CONVNEXT $VIT $DEIT $FOCALNET --overwrite_recordings
 
-uv run python -m scripts.illusions.thatcher \
-  --annotations "data/datasets/full/visual_illusions/thatcher_illusion_face/annotation.csv" \
-  --condition 'inverted' \
-  --models $RESNET $RESNEXT $CONVNEXT $VIT $DEIT $FOCALNET --overwrite_recordings
