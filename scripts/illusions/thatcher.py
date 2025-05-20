@@ -14,7 +14,7 @@ from mindset.src.utils.device_utils import set_global_device, to_global_device
 from scripts.analysis import get_recording_files
 
 
-RESULTS_ROOT = "data/results/nap_vs_map_change"
+RESULTS_ROOT = "data/results/thatcher_face"
 
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
@@ -36,6 +36,7 @@ def init_model(model_name, verbose=False):
 
 def record_from_model(
     model: tuple[str, torch.nn.Module],
+    condition: str,
     metric: str,
     annotations_file: str,
     results_folder: Path,
@@ -55,11 +56,11 @@ def record_from_model(
 
     recorder = RecordDistance(
         annotations_file,
-        factor_variable='Type',
-        reference_level='reference',
-        match_factors=['SampleName'],
+        factor_variable='Condition',
+        reference_level=condition,
+        match_factors=['FaceID'],
         non_match_factors=[],  # don't know what this should be
-        filter_factor_level={},
+        filter_factor_level={'Condition': [condition, f"thatcherized_{condition}"]},
         distance_metric=metric,
         net=net,
         only_save=["Conv2d", "Linear"],
@@ -87,9 +88,10 @@ def record_from_model(
     return recordings_file_path
 
 
-def record_all(annotations_file, models, model_names, results_folder):
+def record_all(annotations_file, condition, models, model_names, results_folder):
     record = partial(
         record_from_model,
+        condition=condition,
         metric= "cossim",
         annotations_file=annotations_file,
         results_folder=results_folder,
@@ -104,15 +106,14 @@ def record_all(annotations_file, models, model_names, results_folder):
 
 def main(
     annotations_file,
-    shape_type,
+    condition,
     model_names,
     save_folder='',
     overwrite_recordings=False,
-    comparison_levels=None,
 ):
     _logger.info("Loading models...")
 
-    results_folder = Path(RESULTS_ROOT) / shape_type
+    results_folder = Path(RESULTS_ROOT) / condition
     if save_folder != '':
         results_folder = results_folder / save_folder
 
@@ -123,11 +124,7 @@ def main(
         models = [init_model(m) for m in model_names]
         results_folder.mkdir(parents=True, exist_ok=True)
         _logger.info(f"Set results root folder to {RESULTS_ROOT}")
-        recording_files = record_all(annotations_file, models, model_names, results_folder)
-    else:
-        recording_files = get_recording_files(results_folder, model_names)
-
-    # analyize_all(recording_files, comparison_levels, start_from=0)
+        record_all(annotations_file, condition, models, model_names, results_folder)
 
 
 if __name__ == "__main__":
@@ -139,8 +136,8 @@ if __name__ == "__main__":
     parser.add_argument("--annotations_file", type=str,
         help="Path to the annotations file used to run the experiment."
     )
-    parser.add_argument("--shape_type", type=str,
-        choices=["2d_lines", "geons_standard", "geons_no_shades", "silhouettes"],
+    parser.add_argument("--condition", type=str,
+        choices=["straight", "inverted"],
         help="Change type applied to the basis images"
     )
     parser.add_argument("--save_folder", type=str, default='',
@@ -149,10 +146,8 @@ if __name__ == "__main__":
     parser.add_argument("--overwrite_recordings", action='store_true',
         help="Overwrite the recording file if it all already exists"
     )
-    parser.add_argument("--comparison_levels", type=str, nargs="+", default=None,
-        help=""
-    )
 
     args = parser.parse_args()
     main(**vars(args))
+
 
