@@ -16,8 +16,7 @@ from src.utils import get_device, model_transform, init_model
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
 
-RESULTS_ROOT = "data/results/amodal_completion"
-TEST_COLUMNS = ['SampleId', 'ManipulatedShape', 'ControlPath', 'OccludedPath', 'NotchedPath']
+TEST_COLUMNS = ['SampleID', 'ManipulatedShape', 'ControlPath', 'OccludedPath', 'NotchedPath']
 IMAGE_TYPES  = ['Control', 'Occluded', 'Notched']
 COMPARISONS  = [('Control', 'Occluded'), ('Control', 'Notched')]
 
@@ -57,7 +56,7 @@ def record_from_model(
                 layer_acts = {k: v.cpu() for k, v in recorder.activation.items()}
                 for i in range(len(images)):
                     all_records.append({
-                        'SampleId':        int(batch['SampleId'][i]),
+                        'SampleID':         int(batch['SampleID'][i]),
                         'ManipulatedShape': batch['ManipulatedShape'][i],
                         'ImageType':        img_type,
                         **{k: v[i] for k, v in layer_acts.items()},
@@ -68,16 +67,16 @@ def record_from_model(
     layer_names = list(recorder.activation.keys())
     records_by_sample = {}
     for r in all_records:
-        records_by_sample.setdefault(r['SampleId'], {})[r['ImageType']] = r
+        records_by_sample.setdefault(r['SampleID'], {})[r['ImageType']] = r
 
     df_rows = []
     for sample_id, by_type in records_by_sample.items():
         for ref_type, comp_type in COMPARISONS:
             ref, comp = by_type[ref_type], by_type[comp_type]
             df_rows.append({
-                'SampleId': sample_id,
+                'SampleID':         sample_id,
                 'ManipulatedShape': ref['ManipulatedShape'],
-                'Comparison': '{ref_type}_vs_{comp_type}',
+                'Comparison':       f'{ref_type}_vs_{comp_type}',
                 **{k: distance_fn(ref[k], comp[k]) for k in layer_names},
             })
 
@@ -106,19 +105,17 @@ def record_all(annotations_file, models, model_names, results_folder):
 def main(
     annotations_file,
     model_names,
-    save_folder='',
+    results_folder='',
     overwrite_recordings=False,
 ):
     _logger.info("Loading models...")
 
-    results_folder = Path(RESULTS_ROOT)
-    if save_folder != '':
-        results_folder = results_folder / save_folder
+    results_folder = Path(results_folder) / 'amodal_completion'
 
     if not results_folder.exists() or overwrite_recordings:
         models = [init_model(m) for m in model_names]
         results_folder.mkdir(parents=True, exist_ok=True)
-        _logger.info(f"Set results root folder to {RESULTS_ROOT}")
+        _logger.info(f"Set results root folder to {results_folder}")
         record_all(annotations_file, models, model_names, results_folder)
     else:
         get_recording_files(results_folder, model_names)
@@ -132,7 +129,7 @@ if __name__ == "__main__":
     parser.add_argument("--annotations_file", type=str,
         help="Path to the annotations file used to run the experiment."
     )
-    parser.add_argument("--save_folder", type=str, default='',
+    parser.add_argument("--results_folder", type=str, default='data/results',
         help="Experiment folder where to store all results"
     )
     parser.add_argument("--overwrite_recordings", action='store_true',

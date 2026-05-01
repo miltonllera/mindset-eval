@@ -1340,6 +1340,7 @@ dependencies = [
     { name = "kagglehub" },
     { name = "lightning" },
     { name = "matplotlib" },
+    { name = "mindset-vision" },
     { name = "natsort" },
     { name = "nbconvert" },
     { name = "nbformat" },
@@ -1372,6 +1373,7 @@ requires-dist = [
     { name = "kagglehub", specifier = ">=0.3.7" },
     { name = "lightning", specifier = ">=2.5.1.post0" },
     { name = "matplotlib", specifier = ">=3.10.0" },
+    { name = "mindset-vision", git = "https://github.com/mindset-vision/mindset-vision.git" },
     { name = "natsort", specifier = ">=8.4.0" },
     { name = "nbconvert", specifier = ">=7.16.6" },
     { name = "nbformat", specifier = ">=5.10.4" },
@@ -1394,6 +1396,32 @@ requires-dist = [
     { name = "torch", specifier = ">=2.6.0" },
     { name = "torchvision", specifier = ">=0.21.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
+]
+
+[[package]]
+name = "mindset-vision"
+version = "0.1.0"
+source = { git = "https://github.com/mindset-vision/mindset-vision.git#8e2bdadf7d5a7ad607957d07b2949e47f1b11ec8" }
+dependencies = [
+    { name = "beautifulsoup4" },
+    { name = "ipython" },
+    { name = "matplotlib" },
+    { name = "natsort" },
+    { name = "numpy" },
+    { name = "opencv-contrib-python" },
+    { name = "pandas" },
+    { name = "perlin-noise" },
+    { name = "pillow" },
+    { name = "pyyaml" },
+    { name = "scipy" },
+    { name = "seaborn" },
+    { name = "statsmodels" },
+    { name = "sty" },
+    { name = "timm" },
+    { name = "toml" },
+    { name = "torch" },
+    { name = "torchvision" },
+    { name = "tqdm" },
 ]
 
 [[package]]

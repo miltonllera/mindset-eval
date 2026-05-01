@@ -11,6 +11,7 @@ dependencies = [
     "kagglehub>=0.3.7",
     "lightning>=2.5.1.post0",
     "matplotlib>=3.10.0",
+    "mindset-vision",
     "natsort>=8.4.0",
     "nbconvert>=7.16.6",
     "nbformat>=5.10.4",
@@ -34,3 +35,6 @@ dependencies = [
     "torchvision>=0.21.0",
     "tqdm>=4.67.1",
 ]
+
+[tool.uv.sources]
+mindset-vision = { git = "https://github.com/mindset-vision/mindset-vision.git" }
