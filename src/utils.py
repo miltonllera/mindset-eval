@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch
 import torchvision.transforms as transforms
 import timm
@@ -25,3 +27,7 @@ def model_transform(model) -> transforms.Compose:
         transforms.ToTensor(),
         transforms.Normalize(cfg["mean"], cfg["std"]),
     ])
+
+
+def get_recording_files(results_folder: Path, model_names: str, metric):
+    return [(results_folder / n / f"{metric}_df.csv") for n in model_names]

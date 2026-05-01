@@ -7,10 +7,9 @@ import polars as pl
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from scripts.analysis import get_recording_files
 from src.dataset import AnnotatedDataset
 from src.activation_recorder import ActivationRecorder
-from src.utils import get_device, model_transform, init_model
+from src.utils import get_device, model_transform, init_model, get_recording_files
 
 
 logging.basicConfig(level=logging.INFO)
