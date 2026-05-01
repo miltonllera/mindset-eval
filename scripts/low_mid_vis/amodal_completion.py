@@ -4,6 +4,7 @@ from pathlib import Path
 
 import torch
 import polars as pl
+import plotly.express as px
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -79,8 +80,20 @@ def record_from_model(
                 **{k: distance_fn(ref[k], comp[k]) for k in layer_names},
             })
 
+    df = pl.DataFrame(df_rows)
     recordings_file_path = results_folder / f"{metric}.csv"
-    pl.DataFrame(df_rows).write_csv(recordings_file_path)
+    df.write_csv(recordings_file_path)
+
+    def format_col(layer):
+        scores = df.select('Comparison', layer)
+        agg_scores = scores.group_by('Comparison').mean()
+        agg_scores.columns = ['Comparison', metric]
+        return agg_scores.with_columns(pl.lit(scores.columns[-1]).alias("Layer"))
+
+    scores = pl.concat([format_col(l) for l in df.columns[3:]])
+
+    fig = px.line(scores, x='Layer', y=metric, color='Comparison')
+    fig.write_image(results_folder / f"{metric}_vs_layer.png")
 
     _logger.info(f"Recording finished. Saved to: <{recordings_file_path}>")
     return recordings_file_path
@@ -117,7 +130,7 @@ def main(
         _logger.info(f"Set results root folder to {results_folder}")
         record_all(annotations_file, models, model_names, results_folder)
     else:
-        get_recording_files(results_folder, model_names)
+        get_recording_files(results_folder, model_names, 'cossim')
 
 
 if __name__ == "__main__":
