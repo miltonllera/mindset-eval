@@ -3,7 +3,7 @@ name = "mindset-eval"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "anyio>=4.8.0",
     "ipython>=8.32.0",
@@ -39,4 +39,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-mindset-vision = { git = "https://github.com/mindset-vision/mindset-vision.git" }
+mindset-vision = { git = "https://github.com/mindset-vision/mindset-vision" }
