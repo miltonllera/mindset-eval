@@ -17,9 +17,18 @@ logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
 
 
-TEST_COLUMNS = ['SampleID', 'Shape', 'BasisPath', 'Variation1Path', 'Variation2Path']
-IMAGE_TYPES  = ['Basis', 'Variation1', 'Variation2']
-COMPARISONS  = [('Basis', 'Variation1'), ('Basis', 'Variation2')]
+TEST_COLUMNS = [
+    'SampleID', 'Shape','BasisPath', 'BasisRotatedPath', 'RectangleHullPath',
+    'RectangleHullRotatedPath', '3DShapePath', '3DShapeRotatedPath'
+]
+IMAGE_TYPES  = [
+    'Basis', 'BasisRotated', 'RectangleHull', 'RectangleHullRotated', '3DShape', '3DShapeRotated'
+]
+COMPARISONS  = [
+    ('Basis', 'BasisRotated'),
+    ('RectangleHull', 'RectangleHullRotated'),
+    ('3DShape', '3DShapeRotated'),
+]
 
 
 def record_from_model(
@@ -123,7 +132,7 @@ def main(
 ):
     _logger.info("Loading models...")
 
-    results_folder = Path(results_folder) / 'amodal_completion'
+    results_folder = Path(results_folder) / 'depth_drawings'
 
     if not results_folder.exists() or overwrite_recordings:
         models = [init_model(m) for m in model_names]
@@ -143,7 +152,7 @@ if __name__ == "__main__":
     parser.add_argument("--annotations_file", type=str,
         help="Path to the annotations file used to run the experiment."
     )
-    parser.add_argument("--results_folder", type=str, default='',
+    parser.add_argument("--results_folder", type=str, default='data/results',
         help="Experiment folder where to store all results"
     )
     parser.add_argument("--overwrite_recordings", action='store_true',
