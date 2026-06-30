@@ -1,160 +1,154 @@
-import sys
 import argparse
 import logging
-from functools import partial
 from pathlib import Path
 
 import torch
-import timm
-import torchvision.transforms as transforms
+import polars as pl
+import plotly.express as px
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
-sys.path.append("mindset/")
-from mindset.src.utils.similarity_judgment.activation_recorder import RecordDistance
-from mindset.src.utils.device_utils import set_global_device, to_global_device, GLOBAL_DEVICE
-from scripts.analysis import get_recording_files
+from src.dataset import AnnotatedDataset
+from src.activation_recorder import ActivationRecorder
+from src.utils import get_device, model_transform, init_model, get_recording_files
 
-
-RESULTS_ROOT = "data/results/emergent_features"
 
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
 
+TEST_COLUMNS = ['SampleID', 'BaseAPath', 'BaseBPath', 'EmergentPath', 'NonEmergentPath']
+IMAGE_TYPES  = ['BaseA', 'BaseB', 'Emergent', 'NonEmergent']
+COMPARISONS  = [('BaseA', 'BaseB'), ('Emergent', 'NonEmergent')]
 
-#---------------------------------------- Load models --------------------------------------------
-
-def init_model(model_name, verbose=False):
-    model = timm.create_model(model_name, pretrained=True, cache_dir="data/models/")  # type: ignore
-    if verbose:
-        print(model)
-
-    return model
-
-#---------------------------------------- Recording ----------------------------------------------
 
 def record_from_model(
     model: tuple[str, torch.nn.Module],
     metric: str,
-    annotations_file: str,
-    feature_type: str,
+    dataloader: DataLoader,
     results_folder: Path,
 ):
     model_name, net = model
-
-    net = to_global_device(net)
-
-    # get_user_attributes(model)
-    transform_fn = transforms.Compose([
-        transforms.Resize(net.pretrained_cfg['input_size'][-1]),  # type: ignore
-        transforms.ToTensor(),
-        transforms.Normalize(net.pretrained_cfg['mean'], net.pretrained_cfg['std'])  # type: ignore
-    ])
-
     results_folder = results_folder / model_name
     results_folder.mkdir(parents=True, exist_ok=True)
 
-    _logger.info(f"Recording comparision for feature '{feature_type}' from model: <{model_name}>")
+    _logger.info(f"Recording from model: <{model_name}>...")
 
-    recorder = RecordDistance(
-        annotations_file,
-        factor_variable='PairA/B',
-        reference_level='a',
-        match_factors=['SampleId'],
-        non_match_factors=[],
-        filter_factor_level={'Type': feature_type},
-        distance_metric=metric,
-        net=net,
-        only_save=["Conv2d", "Linear"],
-    )
+    device = get_device()
 
-    distance_df, layer_names = recorder.compute_from_annotation(
-        transform_fn,
-        matching_transform=True,
-        fill_bk=[0, 0, 0],
-        transf_boundaries={  # type: ignore
-            'translation_X': [-0.2, 0.2],
-            'translation_Y': [-0.2, 0.2],
-            'scale': [1.0, 1.2],
-            'rotation': [0, 360],
-        },
-        transformed_repetition=20,
-        path_save_fig=results_folder,
-        add_columns=[],
-    )
+    if metric == "cossim":
+        distance_fn = lambda a, b: torch.nn.functional.cosine_similarity(
+            a.flatten().unsqueeze(0), b.flatten().unsqueeze(0)
+        ).item()
+    elif metric == "euclidean":
+        distance_fn = lambda a, b: torch.norm(a.flatten() - b.flatten()).item()
+    else:
+        raise ValueError(f"Unknown metric: {metric}")
 
-    _logger.info(f"Recording finished. Figures in: <{results_folder}>")
-    recordings_file_path = results_folder / f"{feature_type}_{metric}.csv"
-    distance_df.to_csv(recordings_file_path)
+    recorder = ActivationRecorder(net)
+    all_records = []
+
+    net.eval()
+    with torch.no_grad():
+        for batch in tqdm(dataloader, desc=model_name):
+            for img_type in IMAGE_TYPES:
+                images = batch[f'{img_type}Image'].to(device)
+                net(images)
+                layer_acts = {k: v.cpu() for k, v in recorder.activation.items()}
+                for i in range(len(images)):
+                    all_records.append({
+                        'SampleID':         int(batch['SampleID'][i]),
+                        'ImageType':        img_type,
+                        **{k: v[i] for k, v in layer_acts.items()},
+                    })
+
+    recorder.remove_hooks()
+    _logger.info("Done.\nFormatting and saving...")
+
+    layer_names = list(recorder.activation.keys())
+    records_by_sample = {}
+    for r in all_records:
+        records_by_sample.setdefault(r['SampleID'], {})[r['ImageType']] = r
+
+    df_rows = []
+    for sample_id, by_type in records_by_sample.items():
+        for ref_type, comp_type in COMPARISONS:
+            ref, comp = by_type[ref_type], by_type[comp_type]
+            df_rows.append({
+                'SampleID':         sample_id,
+                'Comparison':       f'{ref_type}_vs_{comp_type}',
+                **{k: distance_fn(ref[k], comp[k]) for k in layer_names},
+            })
+
+    df = pl.DataFrame(df_rows)
+    recordings_file_path = results_folder / f"{metric}.csv"
+    df.write_csv(recordings_file_path)
+    _logger.info("Done.\nPlotting summary...")
+
+    def format_col(layer):
+        scores = df.select('Comparison', layer)
+        agg_scores = scores.group_by('Comparison').mean()
+        agg_scores.columns = ['Comparison', metric]
+        return agg_scores.with_columns(pl.lit(scores.columns[-1]).alias("Layer"))
+
+    scores = pl.concat([format_col(l) for l in df.columns[3:]])
+
+    fig = px.line(scores, x='Layer', y=metric, color='Comparison')
+    fig.write_image(results_folder / f"{metric}_vs_layer.png")
+    _logger.info(f"Done. Results saved to: <{recordings_file_path}>")
 
     return recordings_file_path
 
 
-def record_all(annotations_file, feature_type, models, model_names, results_folder):
-    record = partial(
-        record_from_model,
-        metric= "cossim",
-        feature_type=feature_type,
-        annotations_file=annotations_file,
-        results_folder=results_folder,
-    )
-
+def record_all(annotations_file, models, model_names, results_folder):
+    variant = Path(annotations_file).parts[-2]
     recording_paths = []
-    for m, n in zip(models, model_names):
-        recording_paths.append(record((n, m)))
+    for model, model_name in zip(models, model_names):
+        dataset = AnnotatedDataset(
+            annotations_file,
+            test_columns=TEST_COLUMNS,
+            transform=model_transform(model),
+        )
+        dataloader = DataLoader(dataset, batch_size=32, shuffle=False)
+        recording_paths.append(
+            record_from_model((model_name, model), "cossim", dataloader, results_folder / variant)
+        )
 
+    _logger.info("All recordings completed.")
     return recording_paths
 
 
 def main(
     annotations_file,
     model_names,
-    save_folder='',
+    results_folder='',
     overwrite_recordings=False,
-    comparison_levels=None,
 ):
     _logger.info("Loading models...")
 
-    results_folder = Path(RESULTS_ROOT)
-    if save_folder != '':
-        results_folder = results_folder / save_folder
-
-    device = 'cpu'
-    set_global_device(device)
+    results_folder = Path(results_folder) / 'emergent_features'
 
     if not results_folder.exists() or overwrite_recordings:
         models = [init_model(m) for m in model_names]
         results_folder.mkdir(parents=True, exist_ok=True)
-        _logger.info(f"Set results root folder to {RESULTS_ROOT}")
-
-        # NOTE: we compare within all types of features, the final analysis will be a
-        # comparison of comparisons.
-        for feature_type in ['single', 'proximity', 'orientation', 'linearity']:
-            recording_files = record_all(
-                annotations_file, feature_type, models, model_names, results_folder
-            )
+        _logger.info(f"Set results root folder to {results_folder}")
+        record_all(annotations_file, models, model_names, results_folder)
     else:
-        recording_files = get_recording_files(results_folder, model_names)
-
-    # analyize_all(recording_files, comparison_levels, start_from=0)
+        get_recording_files(results_folder, model_names, 'cossim')
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-
     parser.add_argument("--models", type=str, nargs='+', dest='model_names',
         help="List of models to test"
     )
     parser.add_argument("--annotations_file", type=str,
         help="Path to the annotations file used to run the experiment."
     )
-    parser.add_argument("--save_folder", type=str, default='',
+    parser.add_argument("--results_folder", type=str, default='data/results',
         help="Experiment folder where to store all results"
     )
     parser.add_argument("--overwrite_recordings", action='store_true',
-        help="Overwrite the recording file if it all already exists"
+        help="Overwrite the recording file if it already exists"
     )
-    parser.add_argument("--comparison_levels", type=str, nargs="+", default=None,
-        help=""
-    )
-
     args = parser.parse_args()
     main(**vars(args))
