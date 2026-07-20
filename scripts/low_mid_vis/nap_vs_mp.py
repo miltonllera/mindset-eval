@@ -16,9 +16,9 @@ from src.utils import get_device, model_transform, init_model, get_recording_fil
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
 
-TEST_COLUMNS = ['SampleID', 'BasisPath', 'CoordinateChangePath', 'RelationChangePath']
-IMAGE_TYPES  = ['Basis', 'CoordinateChange', 'RelationChange']
-COMPARISONS  = [('Basis', 'CoordinateChange'), ('Basis', 'RelationChange')]
+TEST_COLUMNS = ['SampleID', 'Dimension', 'ReferencePath', 'MPPath', 'NAPPath']
+IMAGE_TYPES  = ['Reference', 'MP', 'NAP']
+COMPARISONS  = [('Reference', 'MP'), ('Reference', 'NAP')]
 
 
 def record_from_model(
@@ -56,8 +56,9 @@ def record_from_model(
                 layer_acts = {k: v.cpu() for k, v in recorder.activation.items()}
                 for i in range(len(images)):
                     all_records.append({
-                        'SampleID':  int(batch['SampleID'][i]),
-                        'ImageType': img_type,
+                        'SampleID':   int(batch['SampleID'][i]),
+                        'Dimension':  batch['Dimension'][i],
+                        'ImageType':  img_type,
                         **{k: v[i] for k, v in layer_acts.items()},
                     })
 
@@ -73,8 +74,9 @@ def record_from_model(
         for ref_type, comp_type in COMPARISONS:
             ref, comp = by_type[ref_type], by_type[comp_type]
             df_rows.append({
-                'SampleID':   sample_id,
-                'Comparison': f'{ref_type}_vs_{comp_type}',
+                'SampleID':    sample_id,
+                'Dimension':   ref['Dimension'],
+                'Comparison':  f'{ref_type}_vs_{comp_type}',
                 **{k: distance_fn(ref[k], comp[k]) for k in layer_names},
             })
 
@@ -88,7 +90,7 @@ def record_from_model(
         agg_scores.columns = ['Comparison', metric]
         return agg_scores.with_columns(pl.lit(scores.columns[-1]).alias("Layer"))
 
-    scores = pl.concat([format_col(l) for l in df.columns[2:]])
+    scores = pl.concat([format_col(l) for l in df.columns[3:]])
 
     fig = px.line(scores, x='Layer', y=metric, color='Comparison')
     fig.write_image(results_folder / f"{metric}_vs_layer.png")
@@ -120,7 +122,7 @@ def main(
 ):
     _logger.info("Loading models...")
 
-    results_folder = Path(results_folder) / 'rel_vs_coord'
+    results_folder = Path(results_folder) / 'nap_vs_mp_geons'
 
     if not results_folder.exists() or overwrite_recordings:
         models = [init_model(m) for m in model_names]
