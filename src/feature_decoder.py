@@ -3,6 +3,7 @@ from typing import Callable, Literal
 import torch
 import torch.nn as nn
 import lightning.pytorch as pl
+from torchmetrics import Accuracy, R2Score
 
 
 class FeatureDecoder(pl.LightningModule):
@@ -46,18 +47,13 @@ class FeatureDecoder(pl.LightningModule):
 
     def _step(self, batch, stage):  # type: ignore
         x, y = batch['Image'], batch[self.target_key]
-
-        if len(y.shape) == 1:
-            y = y[..., None]
-        if isinstance(self.loss, nn.BCEWithLogitsLoss):
-            y = y.to(dtype=torch.float32)
-
+        y = self._format_input(y)
         decoder_preds = self.forward(x)
 
         total_loss, decoder_losses = 0.0, {}
         for k, v in decoder_preds.items():
-            decoder_losses[k] = self.loss(v, y)
-            total_loss += decoder_losses[k]
+            decoder_losses[f'{stage}-loss/layer {k}'] = self.loss(v, y)
+            total_loss += decoder_losses[f'{stage}-loss/layer {k}']
 
         self.log_dict(
             decoder_losses,
@@ -66,19 +62,50 @@ class FeatureDecoder(pl.LightningModule):
             on_epoch=stage != 'train',
         )
 
-        return total_loss
+        return total_loss, decoder_losses, decoder_preds
 
     def training_step(self, batch):
-        return self._step(batch, 'train')
+        return self._step(batch, 'train')[0]
 
     def validation_step(self, batch):
-        return self._step(batch, 'validation')
+        total_loss, _, predictions = self._step(batch, 'val')
+
+        if isinstance(self.loss, nn.BCEWithLogitsLoss):
+            metric = Accuracy(task='binary').to(device=list(predictions.values())[0].device)
+            name = 'acc'
+        elif isinstance(self.loss, nn.CrossEntropyLoss):
+            metric = Accuracy(task='multiclass')
+            name = 'acc'
+        else:
+            metric = R2Score()
+            name = 'r2'
+
+        decoder_acc = {}
+        for k, v in predictions.items():
+            decoder_acc[f'val-{name}/layer {k}'] = metric(v, self._format_input(batch[self.target_key]))
+
+        self.log_dict(
+            decoder_acc,
+            prog_bar=True,
+            on_step=False,
+            on_epoch=True,
+        )
+
+        return total_loss
+
 
     def configure_optimizers(self):
         parameters = [p for p in self._decoders.parameters()]
         if self.finetune_model:
             parameters = [p for p in self.net.parameters()]
         return torch.optim.AdamW(parameters, lr=1e-3)
+
+    def _format_input(self, target):
+        if len(target.shape) == 1:
+            target = target[..., None]
+        if isinstance(self.loss, nn.BCEWithLogitsLoss):
+            target = target.to(dtype=torch.float32)
+        return target
 
     def _init_decoders(self):
         input_size = self.net.pretrained_cfg['input_size']  # type: ignore

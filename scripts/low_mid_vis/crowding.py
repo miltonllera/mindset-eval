@@ -14,6 +14,9 @@ from src.feature_decoder import FeatureDecoder
 from src.utils import get_device, model_transform, init_model, get_recording_files
 
 
+torch.set_float32_matmul_precision('high')
+
+
 logging.basicConfig(level=logging.INFO)
 _logger = logging.getLogger(__name__)
 
@@ -36,7 +39,7 @@ def record_from_model(
 
     all_records = []
 
-    feature_extractor.eval()
+    feature_extractor = feature_extractor.eval().to(device=device)
     with torch.no_grad():
         n = 0
         for batch in tqdm(dataloader, desc=model_name):
@@ -50,24 +53,31 @@ def record_from_model(
                     'VernierOffset': batch['VernierOffset'][i],
                     'GridPattern': batch['GridPattern'][i],
                     'Target':  targets[i],
-                    **{k: v[i] for k, v in preds.items()},  # predictions for each layer
+                    **{
+                        k: (v[i].sigmoid() > 0.5).to(dtype=torch.int).cpu().item()
+                        for k, v in preds.items()},
                 })
 
     df = pl.DataFrame(all_records)
     recordings_file_path = results_folder / f"predictions.csv"
     df.write_csv(recordings_file_path)
 
-    targets = df.select('VernierOffset', 'Target')
+    targets = df['Target']
     def format_col(layer):
         data = df.select('VernierOffset', 'GridPattern', layer)
-        correct = data.with_columns(correct=(pl.col(layer) == targets))  # type: ignore
-        agg_scores = correct.group_by('VernierOffset').mean()
-        agg_scores.columns = ['VernierOffset', 'accuracy']
-        return agg_scores.with_columns(pl.lit(scores.columns[-1]).alias("Layer"))
+        data = data.with_columns(
+            (pl.col(layer) == targets).alias(f'Correct?'),
+            pl.col('GridPattern').map_elements(lambda x: len(x.split(','))).alias('Pattern Length'),
+            pl.lit(layer).alias('Layer')
+        )
+        data = data.drop(layer, 'GridPattern')
+        data = data.group_by('VernierOffset', 'Pattern Length', 'Layer').mean()
+        data.columns = ['VernierOffset', 'Pattern Length', 'Layer', 'Accuracy']
+        return data.sort(by=['VernierOffset', 'Pattern Length'])
 
-    scores = pl.concat([format_col(l) for l in df.columns[3:]])
+    scores = pl.concat([format_col(l) for l in df.columns[4:]])
 
-    fig = px.line(scores, x='Layer', y='Accuracy')
+    fig = px.line(scores, x='Layer', y='Accuracy', color='Pattern Length')
     fig.write_image(results_folder / f"accuracy_vs_layer.png")
 
     _logger.info(f"Recording finished. Saved to: <{recordings_file_path}>")
@@ -77,7 +87,7 @@ def record_from_model(
 def train_feature_extractor(feature_decoder, dataset):
     dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
     trainer = Trainer(max_epochs=-1, max_steps=1000)
-    trainer.fit(feature_decoder, train_dataloaders=dataloader)
+    trainer.fit(feature_decoder, train_dataloaders=dataloader, val_dataloaders=dataloader)
     return feature_decoder
 
 
@@ -118,7 +128,7 @@ def main(
 ):
     _logger.info("Loading models...")
 
-    results_folder = Path(results_folder) / 'amodal_completion'
+    results_folder = Path(results_folder) / 'un_crowding'
 
     if not results_folder.exists() or overwrite_recordings:
         models = [init_model(m) for m in model_names]
