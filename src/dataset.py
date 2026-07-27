@@ -11,13 +11,18 @@ class AnnotatedDataset(Dataset):
         annotations_file: str | Path,
         test_columns: str | list[str],
         transform: Callable | None = None,
+        filter_expr: str | None = None,
     ) -> None:
         annotations_file = Path(annotations_file)
         if isinstance(test_columns, str):
             test_columns = [test_columns]
 
+        annotations = pl.read_csv(annotations_file)
+        if filter_expr is not None:
+            annotations =  annotations.filter(eval(filter_expr))
+
         self._root = annotations_file.parent
-        self.annotations = pl.read_csv(annotations_file)
+        self.annotations = annotations
         self.test_columns = test_columns
         self.transform = transform
 
