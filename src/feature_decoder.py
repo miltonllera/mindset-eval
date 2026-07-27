@@ -83,7 +83,7 @@ class FeatureDecoder(pl.LightningModule):
     def _init_decoders(self):
         input_size = self.net.pretrained_cfg['input_size']  # type: ignore
         sample_input = torch.randn(input_size)[None]  # type: ignore
-        self.net(sample_input)
+        self.net.cpu()(sample_input)
 
         for k, v in self._extracted_features.items():
             if len(v.shape) > 2:
