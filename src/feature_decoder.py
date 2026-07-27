@@ -12,7 +12,8 @@ class FeatureDecoder(pl.LightningModule):
         target_dim: int,
         target_key: str,
         loss: Literal['mse', 'cross_entropy'] | Callable,
-        decode_from: list[str] | None = None
+        decode_from: list[str] | None = None,
+        finetune_model: bool = True
     ) -> None:
         super().__init__()
 
@@ -25,12 +26,13 @@ class FeatureDecoder(pl.LightningModule):
         self.net = net
         self.target_dim = target_dim
         self.target_key = target_key
+        self.finetune_model = finetune_model
+        self.loss = loss
         self._hooks = []
         self._decoders = nn.ModuleDict()
         self._extracted_features = {}
         self._register_hooks()
         self._init_decoders()
-        self.loss = loss
 
     def forward(self, x):
         self._extracted_features.clear()
@@ -73,7 +75,10 @@ class FeatureDecoder(pl.LightningModule):
         return self._step(batch, 'validation')
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self._decoders.parameters(), lr=1e-4)
+        parameters = [p for p in self._decoders.parameters()]
+        if self.finetune_model:
+            parameters = [p for p in self.net.parameters()]
+        return torch.optim.AdamW(parameters, lr=1e-3)
 
     def _init_decoders(self):
         input_size = self.net.pretrained_cfg['input_size']  # type: ignore
@@ -98,7 +103,7 @@ class FeatureDecoder(pl.LightningModule):
 
     def _make_hook(self, name):
         def hook(_module, _input, output):
-            self._extracted_features[name] = output.detach()
+            self._extracted_features[name] = (output.detach() if self.finetune_model else output)
         return hook
 
     def _leaf_layers(self):

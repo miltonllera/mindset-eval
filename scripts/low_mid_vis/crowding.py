@@ -40,7 +40,7 @@ def record_from_model(
     with torch.no_grad():
         n = 0
         for batch in tqdm(dataloader, desc=model_name):
-            images = batch['Path'].to(device)
+            images = batch['Image'].to(device)
             preds = feature_extractor(images)
             targets = batch[TARGET_COLUMN]
 
