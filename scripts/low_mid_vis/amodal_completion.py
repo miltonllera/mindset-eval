@@ -18,7 +18,7 @@ _logger = logging.getLogger(__name__)
 
 TEST_COLUMNS = ['SampleID', 'ManipulatedShape', 'ControlPath', 'OccludedPath', 'NotchedPath']
 IMAGE_TYPES  = ['Control', 'Occluded', 'Notched']
-COMPARISONS  = [('Control', 'Occluded'), ('Control', 'Notched')]
+COMPARISONS  = [('Occluded', 'Control'), ('Occluded', 'Notched')]
 
 
 def record_from_model(
