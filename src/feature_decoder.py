@@ -14,7 +14,7 @@ class FeatureDecoder(pl.LightningModule):
         target_key: str,
         loss: Literal['mse', 'cross_entropy'] | Callable,
         decode_from: list[str] | None = None,
-        finetune_model: bool = True
+        finetune_model: bool = False
     ) -> None:
         super().__init__()
 
@@ -37,7 +37,12 @@ class FeatureDecoder(pl.LightningModule):
 
     def forward(self, x):
         self._extracted_features.clear()
-        self.net(x)
+        if not self.finetune_model:
+            with torch.no_grad():
+                self.net(x)
+        else:
+            self.net(x)
+
         decoder_preds = {}
         for k, v in self._extracted_features.items():
             if len(v.shape) > 2:
@@ -98,7 +103,7 @@ class FeatureDecoder(pl.LightningModule):
         parameters = [p for p in self._decoders.parameters()]
         if self.finetune_model:
             parameters = [p for p in self.net.parameters()]
-        return torch.optim.AdamW(parameters, lr=1e-3)
+        return torch.optim.Adam(parameters, lr=1e-3)
 
     def _format_input(self, target):
         if len(target.shape) == 1:
@@ -118,7 +123,15 @@ class FeatureDecoder(pl.LightningModule):
             else:
                 feature_shape = v.shape[-1]
 
-            self._decoders.add_module(k, nn.Linear(feature_shape, self.target_dim))
+            self._decoders.add_module(
+                k,
+                nn.Sequential(
+                    nn.BatchNorm1d(feature_shape),
+                    nn.Linear(feature_shape, 64),
+                    nn.ELU(),
+                    nn.Linear(64, 1)
+                )
+            )
 
         self._extracted_features.clear()
 

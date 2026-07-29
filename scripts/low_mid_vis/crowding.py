@@ -85,9 +85,12 @@ def record_from_model(
 
 
 def train_feature_extractor(feature_decoder, dataset):
-    dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
-    trainer = Trainer(max_epochs=-1, max_steps=1000)
-    trainer.fit(feature_decoder, train_dataloaders=dataloader, val_dataloaders=dataloader)
+    dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=32)
+    val_dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=32)
+    trainer = Trainer(
+        max_epochs=-1, max_steps=1000, val_check_interval=100, check_val_every_n_epoch=None
+    )
+    trainer.fit(feature_decoder, train_dataloaders=dataloader, val_dataloaders=val_dataloader)
     return feature_decoder
 
 
