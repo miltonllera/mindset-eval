@@ -87,7 +87,9 @@ class FeatureDecoder(pl.LightningModule):
 
         decoder_acc = {}
         for k, v in predictions.items():
-            decoder_acc[f'val-{name}/layer {k}'] = metric(v, self._format_input(batch[self.target_key]))
+            decoder_acc[f'val-{name}/layer {k}'] = metric(
+                v, self._format_input(batch[self.target_key])
+            )
 
         self.log_dict(
             decoder_acc,
