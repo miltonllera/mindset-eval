@@ -12,7 +12,7 @@ MODELS=(
   # ConvNeXt
   convnext_base.clip_laion2b_augreg_ft_in1k
   convnext_large_mlp.clip_laion2b_augreg_ft_in1k_384
-  convnext_xlarge.fb_in22k_ft_in1k
+  # convnext_xlarge.fb_in22k_ft_in1k
 
   # ViT
   vit_base_patch16_clip_224.openai_ft_in12k_in1k
@@ -26,7 +26,7 @@ MODELS=(
 
   # Swin
   swin_base_patch4_window7_224.ms_in1k
-  swin_s3_base_224.ms_in1k
+  # swin_s3_base_224.ms_in1k
   swinv2_base_window12to16_192to256.ms_in22k_ft_in1k
 
   # FocalNet

@@ -87,7 +87,7 @@ def record_from_model(
     return recordings_file_path
 
 
-def record_all(annotations_file, models, model_names, results_folder):
+def record_all(annotations_file, model_names, results_folder):
     record = partial(
         record_from_model,
         metric= "cossim",
@@ -96,8 +96,9 @@ def record_all(annotations_file, models, model_names, results_folder):
     )
 
     recording_paths = []
-    for m, n in zip(models, model_names):
-        recording_paths.append(record((n, m)))
+    for model_name in model_names:
+        model = init_model(model_name)
+        recording_paths.append(record((model_name, model)))
 
     return recording_paths
 
@@ -120,10 +121,9 @@ def main(
     set_global_device(device)
 
     if not results_folder.exists() or overwrite_recordings:
-        models = [init_model(m) for m in model_names]
         results_folder.mkdir(parents=True, exist_ok=True)
         _logger.info(f"Set results root folder to {RESULTS_ROOT}")
-        recording_files = record_all(annotations_file, models, model_names, results_folder)
+        recording_files = record_all(annotations_file, model_names, results_folder)
     else:
         recording_files = get_recording_files(results_folder, model_names)
 

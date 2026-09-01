@@ -109,9 +109,10 @@ def record_from_model(
     return recordings_file_path
 
 
-def record_all(annotations_file, models, model_names, results_folder):
+def record_all(annotations_file, model_names, results_folder):
     recording_paths = []
-    for model, model_name in zip(models, model_names):
+    for model_name in model_names:
+        model = init_model(model_name)
         dataset = AnnotatedDataset(
             annotations_file,
             test_columns=TEST_COLUMNS,
@@ -135,10 +136,9 @@ def main(
     results_folder = Path(results_folder) / 'depth_drawings'
 
     if not results_folder.exists() or overwrite_recordings:
-        models = [init_model(m) for m in model_names]
         results_folder.mkdir(parents=True, exist_ok=True)
         _logger.info(f"Set results root folder to {results_folder}")
-        record_all(annotations_file, models, model_names, results_folder)
+        record_all(annotations_file, model_names, results_folder)
     else:
         get_recording_files(results_folder, model_names, 'cossim')
 
