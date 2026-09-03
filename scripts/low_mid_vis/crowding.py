@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from src.dataset import AnnotatedDataset
 from src.feature_decoder import FeatureDecoder
-from src.utils import get_device, model_transform, init_model, get_recording_files
+from src.utils import get_device, model_transform, init_model, get_recording_files, plot_layer_scores
 
 
 torch.set_float32_matmul_precision('high')
@@ -63,22 +63,21 @@ def record_from_model(
     df.write_csv(recordings_file_path)
 
     targets = df['Target']
-    def format_col(layer):
-        data = df.select('VernierOffset', 'GridPattern', layer)
-        data = data.with_columns(
-            (pl.col(layer) == targets).alias(f'Correct?'),
-            pl.col('GridPattern').map_elements(lambda x: len(x.split(','))).alias('Pattern Length'),
-            pl.lit(layer).alias('Layer')
-        )
-        data = data.drop(layer, 'GridPattern')
-        data = data.group_by('VernierOffset', 'Pattern Length', 'Layer').mean()
-        data.columns = ['VernierOffset', 'Pattern Length', 'Layer', 'Accuracy']
-        return data.sort(by=['VernierOffset', 'Pattern Length'])
-
-    scores = pl.concat([format_col(l) for l in df.columns[4:]])
-
-    fig = px.line(scores, x='Layer', y='Accuracy', color='Pattern Length')
-    fig.write_image(results_folder / f"accuracy_vs_layer.png")
+    layer_names = df.columns[4:]
+    acc_df = df.with_columns([
+        (pl.col(layer) == targets).cast(pl.Float64).alias(layer)
+        for layer in layer_names
+    ]).with_columns(
+        pl.col('GridPattern').map_elements(lambda x: f"Pattern Length {len(x.split(','))}", return_dtype=pl.Utf8).alias('Pattern Length')
+    )
+    plot_layer_scores(
+        acc_df,
+        metric="Accuracy",
+        results_folder=results_folder,
+        layer_names=layer_names,
+        group_col="Pattern Length",
+        filename="accuracy_vs_layer.png",
+    )
 
     _logger.info(f"Recording finished. Saved to: <{recordings_file_path}>")
     return recordings_file_path

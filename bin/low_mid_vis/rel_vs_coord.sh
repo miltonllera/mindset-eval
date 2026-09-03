@@ -10,9 +10,9 @@ MODELS=(
   resnext101_32x8d.fb_swsl_ig1b_ft_in1k
 
   # ConvNeXt
-  convnext_base.clip_laion2b_augreg_ft_in1k
-  convnext_large_mlp.clip_laion2b_augreg_ft_in1k_384
-  convnext_xlarge.fb_in22k_ft_in1k
+  # convnext_base.clip_laion2b_augreg_ft_in1k
+  # convnext_large_mlp.clip_laion2b_augreg_ft_in1k_384
+  # convnext_xlarge.fb_in22k_ft_in1k
 
   # ViT
   vit_base_patch16_clip_224.openai_ft_in12k_in1k
@@ -25,9 +25,9 @@ MODELS=(
   deit3_large_patch16_224.fb_in22k_ft_in1k
 
   # Swin
-  swin_base_patch4_window7_224.ms_in1k
-  swin_s3_base_224.ms_in1k
-  swinv2_base_window12to16_192to256.ms_in22k_ft_in1k
+  # swin_base_patch4_window7_224.ms_in1k
+  # swin_s3_base_224.ms_in1k
+  # swinv2_base_window12to16_192to256.ms_in22k_ft_in1k
 
   # FocalNet
   focalnet_base_lrf.ms_in1k
@@ -42,6 +42,6 @@ MODELS=(
 )
 
 uv run python -m scripts.low_mid_vis.rel_vs_coord \
-  --annotations_file "data/datasets/low_mid_level_vision/relational_vs_coordinate/annotation.csv" \
+  --annotations_file "data/datasets/low_mid_vision/relational_vs_coordinate/annotation.csv" \
   --models "${MODELS[@]}" \
   --overwrite_recordings

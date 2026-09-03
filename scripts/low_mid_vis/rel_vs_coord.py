@@ -1,20 +1,25 @@
 import argparse
-import logging
 from pathlib import Path
 
 import torch
 import polars as pl
-import plotly.express as px
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.dataset import AnnotatedDataset
 from src.activation_recorder import ActivationRecorder
-from src.utils import get_device, model_transform, init_model, get_recording_files
+from src.utils import (
+    get_device,
+    model_transform,
+    init_model,
+    get_recording_files,
+    plot_layer_scores,
+    setup_logging
+)
 
 
-logging.basicConfig(level=logging.INFO)
-_logger = logging.getLogger(__name__)
+_logger = setup_logging(__name__)
+
 
 TEST_COLUMNS = ['SampleID', 'BasisPath', 'CoordinateChangePath', 'RelationChangePath']
 IMAGE_TYPES  = ['Basis', 'CoordinateChange', 'RelationChange']
@@ -82,16 +87,7 @@ def record_from_model(
     recordings_file_path = results_folder / f"{metric}.csv"
     df.write_csv(recordings_file_path)
 
-    def format_col(layer):
-        scores = df.select('Comparison', layer)
-        agg_scores = scores.group_by('Comparison').mean()
-        agg_scores.columns = ['Comparison', metric]
-        return agg_scores.with_columns(pl.lit(scores.columns[-1]).alias("Layer"))
-
-    scores = pl.concat([format_col(l) for l in df.columns[2:]])
-
-    fig = px.line(scores, x='Layer', y=metric, color='Comparison')
-    fig.write_image(results_folder / f"{metric}_vs_layer.png")
+    plot_layer_scores(df, metric, results_folder, layer_names=layer_names)
 
     _logger.info(f"Recording finished. Saved to: <{recordings_file_path}>")
     return recordings_file_path
