@@ -17,7 +17,6 @@ from src.utils import (
     setup_logging
 )
 
-
 _logger = setup_logging(__name__)
 
 

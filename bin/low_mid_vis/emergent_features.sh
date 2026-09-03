@@ -25,9 +25,9 @@ MODELS=(
   deit3_large_patch16_224.fb_in22k_ft_in1k
 
   # Swin
-  swin_base_patch4_window7_224.ms_in1k
-  swin_s3_base_224.ms_in1k
-  swinv2_base_window12to16_192to256.ms_in22k_ft_in1k
+  # swin_base_patch4_window7_224.ms_in1k
+  # swin_s3_base_224.ms_in1k
+  # swinv2_base_window12to16_192to256.ms_in22k_ft_in1k
 
   # FocalNet
   focalnet_base_lrf.ms_in1k
@@ -42,6 +42,16 @@ MODELS=(
 )
 
 uv run python -m scripts.low_mid_vis.emergent_features \
-  --annotations_file "data/datasets/low_mid_level_vision/emergent_features/annotation.csv" \
+  --annotations_file "data/datasets/low_mid_vision/emergent_features/linearity/annotation.csv" \
+  --models "${MODELS[@]}" \
+  --overwrite_recordings
+
+uv run python -m scripts.low_mid_vis.emergent_features \
+  --annotations_file "data/datasets/low_mid_vision/emergent_features/orientation/annotation.csv" \
+  --models "${MODELS[@]}" \
+  --overwrite_recordings
+
+uv run python -m scripts.low_mid_vis.emergent_features \
+  --annotations_file "data/datasets/low_mid_vision/emergent_features/proximity/annotation.csv" \
   --models "${MODELS[@]}" \
   --overwrite_recordings

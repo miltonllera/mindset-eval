@@ -1,21 +1,23 @@
 import argparse
-import logging
 from pathlib import Path
 
 import torch
 import polars as pl
-import plotly.express as px
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.dataset import AnnotatedDataset
 from src.activation_recorder import ActivationRecorder
-from src.utils import get_device, model_transform, init_model, get_recording_files, plot_layer_scores
+from src.utils import (
+    get_device,
+    model_transform,
+    init_model,
+    get_recording_files,
+    plot_layer_scores,
+    setup_logging
+)
 
-
-logging.basicConfig(level=logging.INFO)
-_logger = logging.getLogger(__name__)
-
+_logger = setup_logging(__name__)
 
 TEST_COLUMNS = ['SampleID', 'ShapeType', 'NoSplitPath', 'NaturalPath', 'UnnaturalPath']
 IMAGE_TYPES  = ['NoSplit', 'Natural', 'Unnatural']
