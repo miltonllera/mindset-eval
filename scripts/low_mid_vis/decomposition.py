@@ -1,8 +1,10 @@
 import argparse
+import shutil
 from pathlib import Path
 
 import torch
-import polars as pl
+import pandas as pd
+import dask.dataframe as dd
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -39,55 +41,69 @@ def record_from_model(
     device = get_device()
 
     if metric == "cossim":
-        distance_fn = lambda a, b: torch.nn.functional.cosine_similarity(
-            a.flatten().unsqueeze(0), b.flatten().unsqueeze(0)
-        ).item()
+        calc_dist = lambda a, b, bsz: torch.nn.functional.cosine_similarity(
+            a.reshape(bsz, -1), b.reshape(bsz, -1), dim=1
+        ).tolist()
     elif metric == "euclidean":
-        distance_fn = lambda a, b: torch.norm(a.flatten() - b.flatten()).item()
+        calc_dist = lambda a, b, bsz: torch.norm(
+            a.reshape(bsz, -1) - b.reshape(bsz, -1), dim=1
+        ).tolist()
     else:
         raise ValueError(f"Unknown metric: {metric}")
 
+    recordings_file_path = results_folder / f"{metric}.parquet"
+    if recordings_file_path.exists():
+        if recordings_file_path.is_dir():
+            shutil.rmtree(recordings_file_path)
+        else:
+            recordings_file_path.unlink()
+
     recorder = ActivationRecorder(net)
-    all_records = []
+    layer_names = []
 
     net.eval()
     with torch.no_grad():
         for batch in tqdm(dataloader, desc=model_name):
+            bsz = len(batch['SampleID'])
+            batch_layer_acts = {}
             for img_type in IMAGE_TYPES:
                 images = batch[f'{img_type}Image'].to(device)
                 net(images)
-                layer_acts = {k: v.cpu() for k, v in recorder.activation.items()}
-                for i in range(len(images)):
-                    all_records.append({
-                        'SampleID':  int(batch['SampleID'][i]),
-                        'ShapeType': batch['ShapeType'][i],
-                        'ImageType': img_type,
-                        **{k: v[i] for k, v in layer_acts.items()},
-                    })
+                batch_layer_acts[img_type] = {k: v.cpu() for k, v in recorder.activation.items()}
+
+            layer_names = list(recorder.activation.keys())
+            sample_ids = [int(x) for x in batch['SampleID']]
+            shape_types = list(batch['ShapeType'])
+
+            batch_chunks = []
+            for ref_type, comp_type in COMPARISONS:
+                ref_acts = batch_layer_acts[ref_type]
+                comp_acts = batch_layer_acts[comp_type]
+                chunk_dict = {
+                    'SampleID': sample_ids,
+                    'ShapeType': shape_types,
+                    'Comparison': [f'{ref_type}_vs_{comp_type}'] * bsz,
+                }
+                for k in layer_names:
+                    chunk_dict[k] = calc_dist(ref_acts[k], comp_acts[k], bsz)
+                batch_chunks.append(pd.DataFrame(chunk_dict))
+
+            batch_df = pd.concat(batch_chunks, ignore_index=True)
+            dd.from_pandas(batch_df, npartitions=1).to_parquet(
+                recordings_file_path,
+                engine="pyarrow",
+                append=True,
+                ignore_divisions=True,
+            )
+
+            del batch_layer_acts, batch_chunks, batch_df
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     recorder.remove_hooks()
 
-    layer_names = list(recorder.activation.keys())
-    records_by_sample = {}
-    for r in all_records:
-        records_by_sample.setdefault(r['SampleID'], {})[r['ImageType']] = r
-
-    df_rows = []
-    for sample_id, by_type in records_by_sample.items():
-        for ref_type, comp_type in COMPARISONS:
-            ref, comp = by_type[ref_type], by_type[comp_type]
-            df_rows.append({
-                'SampleID':   sample_id,
-                'ShapeType':  ref['ShapeType'],
-                'Comparison': f'{ref_type}_vs_{comp_type}',
-                **{k: distance_fn(ref[k], comp[k]) for k in layer_names},
-            })
-
-    df = pl.DataFrame(df_rows)
-    recordings_file_path = results_folder / f"{metric}.csv"
-    df.write_csv(recordings_file_path)
-
-    plot_layer_scores(df, metric, results_folder, layer_names=layer_names)
+    ddf = dd.read_parquet(recordings_file_path)
+    plot_layer_scores(ddf, metric, results_folder, layer_names=layer_names)
 
     _logger.info(f"Recording finished. Saved to: <{recordings_file_path}>")
     return recordings_file_path
