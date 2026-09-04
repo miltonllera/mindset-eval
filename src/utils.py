@@ -41,8 +41,21 @@ def model_transform(model) -> transforms.Compose:
     ])
 
 
-def get_recording_files(results_folder: Path, model_names: str, metric):
-    return [(results_folder / n / f"{metric}_df.csv") for n in model_names]
+def get_recording_files(results_folder: Path, model_names: list[str] | str, metric: str):
+    if isinstance(model_names, str):
+        model_names = [model_names]
+    files = []
+    for n in model_names:
+        parquet_path = results_folder / n / f"{metric}.parquet"
+        csv_path = results_folder / n / f"{metric}.csv"
+        csv_df_path = results_folder / n / f"{metric}_df.csv"
+        if parquet_path.exists():
+            files.append(parquet_path)
+        elif csv_path.exists():
+            files.append(csv_path)
+        else:
+            files.append(csv_df_path)
+    return files
 
 
 def _color_to_rgba(color_str: str, alpha: float = 0.2) -> str:
@@ -56,7 +69,7 @@ def _color_to_rgba(color_str: str, alpha: float = 0.2) -> str:
 
 
 def plot_layer_scores(
-    df: pl.DataFrame,
+    df,
     metric: str,
     results_folder: Path | str,
     layer_names: list[str] | None = None,
@@ -77,14 +90,43 @@ def plot_layer_scores(
         layer_names = [c for c in df.columns if c not in exclude_cols]
 
     colors = px.colors.qualitative.Plotly
-    groups = df[group_col].unique(maintain_order=True).to_list()
+
+    # Support Dask DataFrame (lazy out-of-core groupby), Polars, or Pandas
+    if hasattr(df, "compute"):
+        agg_df = df.groupby(group_col)[layer_names].agg(["mean", "std"]).compute()
+        groups = list(agg_df.index)
+        group_stats = [
+            (
+                grp,
+                [agg_df.loc[grp, (l, "mean")] for l in layer_names],
+                [agg_df.loc[grp, (l, "std")] for l in layer_names],
+            )
+            for grp in groups
+        ]
+    elif isinstance(df, pl.DataFrame):
+        groups = df[group_col].unique(maintain_order=True).to_list()
+        group_stats = [
+            (
+                grp,
+                [df.filter(pl.col(group_col) == grp)[l].mean() for l in layer_names],
+                [df.filter(pl.col(group_col) == grp)[l].std() for l in layer_names],
+            )
+            for grp in groups
+        ]
+    else:
+        groups = list(df[group_col].unique())
+        group_stats = [
+            (
+                grp,
+                [df[df[group_col] == grp][l].mean() for l in layer_names],
+                [df[df[group_col] == grp][l].std() for l in layer_names],
+            )
+            for grp in groups
+        ]
 
     fig = go.Figure()
 
-    for i, grp in enumerate(groups):
-        sub_df = df.filter(pl.col(group_col) == grp)
-        means = [sub_df[l].mean() for l in layer_names]
-        stds = [sub_df[l].std() for l in layer_names]
+    for i, (grp, means, stds) in enumerate(group_stats):
 
         upper = [
             (m + s) if (m is not None and s is not None) else m
