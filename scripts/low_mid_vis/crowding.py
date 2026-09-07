@@ -1,5 +1,4 @@
 import argparse
-import logging
 import shutil
 from pathlib import Path
 
@@ -12,14 +11,18 @@ from tqdm import tqdm
 
 from src.dataset import AnnotatedDataset
 from src.feature_decoder import FeatureDecoder
-from src.utils import get_device, model_transform, init_model, get_recording_files, plot_layer_scores
-
+from src.utils import (
+    get_device,
+    model_transform,
+    init_model,
+    get_recording_files,
+    plot_layer_scores,
+    setup_logging
+)
 
 torch.set_float32_matmul_precision('high')
 
-
-logging.basicConfig(level=logging.INFO)
-_logger = setup_logging(__name__) if 'setup_logging' in globals() else logging.getLogger(__name__)
+_logger = setup_logging(__name__)
 
 TEST_COLUMNS = ['Path', 'VernierType', 'VernierOffset', 'GridPattern', 'ShapeSize']
 TARGET_COLUMN = 'VernierType'
@@ -63,7 +66,7 @@ def record_from_model(
 
     feature_extractor = feature_extractor.eval().to(device=device)
     sample_counter = 0
-    with torch.no_grad():
+    with torch.inference_mode():
         for batch_idx, batch in enumerate(tqdm(dataloader, desc=model_name)):
             images = batch['Image'].to(device)
             preds = feature_extractor(images)
@@ -110,7 +113,10 @@ def record_from_model(
         temp_consolidated_path.rename(recordings_file_path)
         ddf = dd.read_parquet(recordings_file_path)
 
-    layer_names = [c for c in ddf.columns if c not in ('SampleID', 'VernierOffset', 'GridPattern', 'Target', 'Pattern Length')]
+    layer_names = [
+        c for c in ddf.columns if c not in
+        ('SampleID', 'VernierOffset', 'GridPattern', 'Target', 'Pattern Length')
+    ]
     for layer in layer_names:
         ddf[layer] = (ddf[layer] == ddf['Target']).astype(float)
 
@@ -133,21 +139,22 @@ def record_from_model(
 
 
 def train_feature_extractor(feature_decoder, dataset):
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=32)
-    val_dataloader = DataLoader(dataset, batch_size=32, shuffle=False, num_workers=32)
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=12)
+    val_dataloader = DataLoader(dataset, batch_size=64, shuffle=False, num_workers=12)
     trainer = Trainer(
-        max_epochs=-1, max_steps=1000, val_check_interval=100, check_val_every_n_epoch=None
+        max_epochs=-1, max_steps=500, val_check_interval=100, check_val_every_n_epoch=None
     )
     trainer.fit(feature_decoder, train_dataloaders=dataloader, val_dataloaders=val_dataloader)
     return feature_decoder
 
 
-def record_all(annotations_file, model_names, results_folder):
+def record_all(annotations_file, model_names, record_from, results_folder):
     recording_paths = []
     for model_name in model_names:
         model = init_model(model_name)
         feature_decoder = FeatureDecoder(
-            model, target_dim=1, target_key='VernierType', loss='cross_entropy'
+            model, target_dim=1, target_key='VernierType', loss='cross_entropy',
+            decode_from=record_from,
         )
 
         train_dataset = AnnotatedDataset(
@@ -164,7 +171,7 @@ def record_all(annotations_file, model_names, results_folder):
             transform=model_transform(model),
             filter_expr="pl.col('VernierInOut') == 'inside'",
         )
-        dataloader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+        dataloader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
         recording_paths.append(
             record_from_model((model_name, feature_decoder), dataloader, results_folder)
@@ -175,6 +182,7 @@ def record_all(annotations_file, model_names, results_folder):
 def main(
     annotations_file,
     model_names,
+    record_from,
     results_folder='',
     overwrite_recordings=False,
 ):
@@ -185,7 +193,7 @@ def main(
     if not results_folder.exists() or overwrite_recordings:
         results_folder.mkdir(parents=True, exist_ok=True)
         _logger.info(f"Set results root folder to {results_folder}")
-        record_all(annotations_file, model_names, results_folder)
+        record_all(annotations_file, model_names, record_from, results_folder)
     else:
         get_recording_files(results_folder, model_names, 'cossim')
 
@@ -197,6 +205,9 @@ if __name__ == "__main__":
     )
     parser.add_argument("--annotations_file", type=str,
         help="Path to the annotations file used to run the experiment."
+    )
+    parser.add_argument("--record_from", type=str, nargs='*', default=None,
+        help="Overwrite the recording file if it already exists"
     )
     parser.add_argument("--results_folder", type=str, default='data/results',
         help="Experiment folder where to store all results"

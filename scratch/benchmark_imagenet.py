@@ -17,7 +17,7 @@ from src.utils import get_device, init_model, model_transform
 
 def get_dataset(data_dir: str | Path, split: str, transform):
     """Load ImageNet dataset for a given split using torchvision utilities.
-    
+
     Tries torchvision.datasets.ImageNet first. If raw archives aren't present or extracted,
     falls back to torchvision.datasets.ImageFolder on data_dir/split directory layout.
     """
@@ -37,10 +37,10 @@ def get_dataset(data_dir: str | Path, split: str, transform):
     return dataset
 
 
-@torch.no_grad()
+@torch.inference_mode()
 def evaluate_split(model, dataloader, device, max_samples: int | None = None) -> tuple[float, float]:
     """Evaluate model accuracy on a dataloader.
-    
+
     Returns:
         (top1_acc, top5_acc) as percentages (0.0 to 100.0).
     """

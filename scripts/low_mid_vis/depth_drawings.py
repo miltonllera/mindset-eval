@@ -87,7 +87,7 @@ def record_from_model(
             del flush_df
 
     net.eval()
-    with torch.no_grad():
+    with torch.inference_mode():
         for batch_idx, batch in enumerate(tqdm(dataloader, desc=model_name)):
             bsz = len(batch['SampleID'])
             batch_layer_acts = {}

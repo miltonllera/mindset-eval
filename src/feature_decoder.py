@@ -1,9 +1,14 @@
 import re
+import logging
 from typing import Callable, Literal
 import torch
 import torch.nn as nn
 import lightning.pytorch as pl
 from torchmetrics import Accuracy, R2Score
+
+
+logging.basicConfig(level=logging.INFO)
+_logger = logging.getLogger(__name__)
 
 
 class FeatureDecoder(pl.LightningModule):
@@ -48,6 +53,8 @@ class FeatureDecoder(pl.LightningModule):
             if len(v.shape) > 2:
                 v = v.flatten(1)
             decoder_preds[k] = self._decoders[k](v)
+
+        self._extracted_features.clear()
         return decoder_preds
 
     def _step(self, batch, stage):  # type: ignore
@@ -100,7 +107,6 @@ class FeatureDecoder(pl.LightningModule):
 
         return total_loss
 
-
     def configure_optimizers(self):
         parameters = [p for p in self._decoders.parameters()]
         if self.finetune_model:
@@ -138,10 +144,15 @@ class FeatureDecoder(pl.LightningModule):
         self._extracted_features.clear()
 
     def _register_hooks(self):
-        for idx, layer in enumerate(self._leaf_layers()):
-            name = f"{idx}: {type(layer).__name__}"
-            if any(re.search(pattern, name) for pattern in self.decode_from):
-                self._hooks.append(layer.register_forward_hook(self._make_hook(name)))
+        for pattern in self.decode_from:
+            has_match = False
+            for idx, layer in enumerate(self._leaf_layers()):
+                name = f"{idx}: {type(layer).__name__}"
+                if re.search(pattern, name):
+                    self._hooks.append(layer.register_forward_hook(self._make_hook(name)))
+                    has_match = True
+            if not has_match:
+                _logger.warning(f"Layer pattern name {pattern} did not have any matches.")
 
     def _make_hook(self, name):
         def hook(_module, _input, output):
