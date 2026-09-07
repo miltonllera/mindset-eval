@@ -47,12 +47,18 @@ def get_recording_files(results_folder: Path, model_names: list[str] | str, metr
     files = []
     for n in model_names:
         parquet_path = results_folder / n / f"{metric}.parquet"
+        pred_parquet_path = results_folder / n / "predictions.parquet"
         csv_path = results_folder / n / f"{metric}.csv"
+        pred_csv_path = results_folder / n / "predictions.csv"
         csv_df_path = results_folder / n / f"{metric}_df.csv"
         if parquet_path.exists():
             files.append(parquet_path)
+        elif pred_parquet_path.exists():
+            files.append(pred_parquet_path)
         elif csv_path.exists():
             files.append(csv_path)
+        elif pred_csv_path.exists():
+            files.append(pred_csv_path)
         else:
             files.append(csv_df_path)
     return files

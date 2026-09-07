@@ -1,10 +1,11 @@
 import argparse
 import logging
+import shutil
 from pathlib import Path
 
 import torch
-import polars as pl
-import plotly.express as px
+import pandas as pd
+import dask.dataframe as dd
 from lightning.pytorch import Trainer
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -18,7 +19,7 @@ torch.set_float32_matmul_precision('high')
 
 
 logging.basicConfig(level=logging.INFO)
-_logger = logging.getLogger(__name__)
+_logger = setup_logging(__name__) if 'setup_logging' in globals() else logging.getLogger(__name__)
 
 TEST_COLUMNS = ['Path', 'VernierType', 'VernierOffset', 'GridPattern', 'ShapeSize']
 TARGET_COLUMN = 'VernierType'
@@ -28,6 +29,7 @@ def record_from_model(
     recorder: tuple[str, torch.nn.Module],
     dataloader: DataLoader,
     results_folder: Path,
+    flush_every_n_batches: int = 10,
 ):
     model_name, feature_extractor = recorder
     results_folder = results_folder / model_name
@@ -37,41 +39,88 @@ def record_from_model(
 
     device = get_device()
 
-    all_records = []
+    recordings_file_path = results_folder / "predictions.parquet"
+    if recordings_file_path.exists():
+        if recordings_file_path.is_dir():
+            shutil.rmtree(recordings_file_path)
+        else:
+            recordings_file_path.unlink()
+
+    buffer_chunks = []
+
+    def _flush_buffer():
+        nonlocal buffer_chunks
+        if buffer_chunks:
+            flush_df = pd.concat(buffer_chunks, ignore_index=True)
+            dd.from_pandas(flush_df, npartitions=1).to_parquet(
+                recordings_file_path,
+                engine="pyarrow",
+                append=True,
+                ignore_divisions=True,
+            )
+            buffer_chunks.clear()
+            del flush_df
 
     feature_extractor = feature_extractor.eval().to(device=device)
+    sample_counter = 0
     with torch.no_grad():
-        n = 0
-        for batch in tqdm(dataloader, desc=model_name):
+        for batch_idx, batch in enumerate(tqdm(dataloader, desc=model_name)):
             images = batch['Image'].to(device)
             preds = feature_extractor(images)
             targets = batch[TARGET_COLUMN]
+            bsz = len(images)
 
-            for i in range(len(images)):
-                all_records.append({
-                    'SampleID': (n := n + i),
-                    'VernierOffset': batch['VernierOffset'][i],
-                    'GridPattern': batch['GridPattern'][i],
-                    'Target':  targets[i],
-                    **{
-                        k: (v[i].sigmoid() > 0.5).to(dtype=torch.int).cpu().item()
-                        for k, v in preds.items()},
-                })
+            sample_ids = list(range(sample_counter, sample_counter + bsz))
+            sample_counter += bsz
 
-    df = pl.DataFrame(all_records)
-    recordings_file_path = results_folder / f"predictions.csv"
-    df.write_csv(recordings_file_path)
+            vernier_offsets = list(batch['VernierOffset'])
+            grid_patterns = list(batch['GridPattern'])
+            targets_list = [int(t) if isinstance(t, torch.Tensor) else t for t in targets]
 
-    targets = df['Target']
-    layer_names = df.columns[4:]
-    acc_df = df.with_columns([
-        (pl.col(layer) == targets).cast(pl.Float64).alias(layer)
-        for layer in layer_names
-    ]).with_columns(
-        pl.col('GridPattern').map_elements(lambda x: f"Pattern Length {len(x.split(','))}", return_dtype=pl.Utf8).alias('Pattern Length')
+            chunk_dict = {
+                'SampleID': sample_ids,
+                'VernierOffset': vernier_offsets,
+                'GridPattern': grid_patterns,
+                'Target': targets_list,
+            }
+            for k, v in preds.items():
+                pred_tensor = v.squeeze(-1) if v.ndim > 1 else v
+                chunk_dict[k] = (pred_tensor.sigmoid() > 0.5).to(dtype=torch.int).cpu().tolist()
+
+            buffer_chunks.append(pd.DataFrame(chunk_dict))
+
+            del images, preds
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
+            if (batch_idx + 1) % flush_every_n_batches == 0:
+                _flush_buffer()
+
+        _flush_buffer()
+
+    # Consolidate partitions to eliminate fragmentation
+    ddf = dd.read_parquet(recordings_file_path)
+    if ddf.npartitions > 1:
+        temp_consolidated_path = results_folder / "predictions_consolidated.parquet"
+        ddf.repartition(npartitions=1).to_parquet(
+            temp_consolidated_path,
+            engine="pyarrow",
+        )
+        shutil.rmtree(recordings_file_path)
+        temp_consolidated_path.rename(recordings_file_path)
+        ddf = dd.read_parquet(recordings_file_path)
+
+    layer_names = [c for c in ddf.columns if c not in ('SampleID', 'VernierOffset', 'GridPattern', 'Target', 'Pattern Length')]
+    for layer in layer_names:
+        ddf[layer] = (ddf[layer] == ddf['Target']).astype(float)
+
+    ddf['Pattern Length'] = ddf['GridPattern'].map(
+        lambda x: f"Pattern Length {len(x.split(','))}",
+        meta=('GridPattern', 'object')
     )
+
     plot_layer_scores(
-        acc_df,
+        ddf,
         metric="Accuracy",
         results_folder=results_folder,
         layer_names=layer_names,
