@@ -32,6 +32,7 @@ def record_from_model(
     recorder: tuple[str, torch.nn.Module],
     dataloader: DataLoader,
     results_folder: Path,
+    output_tag: str | None = None,
     flush_every_n_batches: int = 10,
 ):
     model_name, feature_extractor = recorder
@@ -42,7 +43,8 @@ def record_from_model(
 
     device = get_device()
 
-    recordings_file_path = results_folder / "predictions.parquet"
+    tag_suffix = f"_{output_tag}" if output_tag else ""
+    recordings_file_path = results_folder / f"predictions{tag_suffix}.parquet"
     if recordings_file_path.exists():
         if recordings_file_path.is_dir():
             shutil.rmtree(recordings_file_path)
@@ -104,7 +106,7 @@ def record_from_model(
     # Consolidate partitions to eliminate fragmentation
     ddf = dd.read_parquet(recordings_file_path)
     if ddf.npartitions > 1:
-        temp_consolidated_path = results_folder / "predictions_consolidated.parquet"
+        temp_consolidated_path = results_folder / f"predictions{tag_suffix}_consolidated.parquet"
         ddf.repartition(npartitions=1).to_parquet(
             temp_consolidated_path,
             engine="pyarrow",
@@ -125,13 +127,14 @@ def record_from_model(
         meta=('GridPattern', 'object')
     )
 
+    plot_filename = f"accuracy_vs_layer{tag_suffix}.png"
     plot_layer_scores(
         ddf,
         metric="Accuracy",
         results_folder=results_folder,
         layer_names=layer_names,
         group_col="Pattern Length",
-        filename="accuracy_vs_layer.png",
+        filename=plot_filename,
     )
 
     _logger.info(f"Recording finished. Saved to: <{recordings_file_path}>")
@@ -148,7 +151,7 @@ def train_feature_extractor(feature_decoder, dataset):
     return feature_decoder
 
 
-def record_all(annotations_file, model_names, record_from, results_folder):
+def record_all(annotations_file, model_names, record_from, results_folder, output_tag=None):
     recording_paths = []
     for model_name in model_names:
         model = init_model(model_name)
@@ -156,6 +159,12 @@ def record_all(annotations_file, model_names, record_from, results_folder):
             model, target_dim=1, target_key='VernierType', loss='cross_entropy',
             decode_from=record_from,
         )
+
+        if not feature_decoder._hooks:
+            _logger.warning(
+                f"No layers matched record_from pattern {record_from} for <{model_name}>. Skipping."
+            )
+            continue
 
         train_dataset = AnnotatedDataset(
             annotations_file,
@@ -174,7 +183,12 @@ def record_all(annotations_file, model_names, record_from, results_folder):
         dataloader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
         recording_paths.append(
-            record_from_model((model_name, feature_decoder), dataloader, results_folder)
+            record_from_model(
+                (model_name, feature_decoder),
+                dataloader,
+                results_folder,
+                output_tag=output_tag,
+            )
         )
     return recording_paths
 
@@ -182,7 +196,8 @@ def record_all(annotations_file, model_names, record_from, results_folder):
 def main(
     annotations_file,
     model_names,
-    record_from,
+    record_from=None,
+    output_tag=None,
     results_folder='',
     overwrite_recordings=False,
 ):
@@ -193,7 +208,13 @@ def main(
     if not results_folder.exists() or overwrite_recordings:
         results_folder.mkdir(parents=True, exist_ok=True)
         _logger.info(f"Set results root folder to {results_folder}")
-        record_all(annotations_file, model_names, record_from, results_folder)
+        record_all(
+            annotations_file,
+            model_names,
+            record_from,
+            results_folder,
+            output_tag=output_tag,
+        )
     else:
         get_recording_files(results_folder, model_names, 'cossim')
 
@@ -207,7 +228,10 @@ if __name__ == "__main__":
         help="Path to the annotations file used to run the experiment."
     )
     parser.add_argument("--record_from", type=str, nargs='*', default=None,
-        help="Overwrite the recording file if it already exists"
+        help="Regex patterns or names of layers to record from"
+    )
+    parser.add_argument("--output_tag", type=str, default=None,
+        help="Optional tag to append to the output files (e.g. chunk_0)"
     )
     parser.add_argument("--results_folder", type=str, default='data/results',
         help="Experiment folder where to store all results"
