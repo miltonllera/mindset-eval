@@ -93,7 +93,7 @@ def record_from_model(
             bsz = len(batch['SampleID'])
             batch_layer_acts = {}
             for img_type in IMAGE_TYPES:
-                images = batch[f'{img_type}Path'].to(device)
+                images = batch[f'{img_type}Image'].to(device)
                 net(images)
                 batch_layer_acts[img_type] = {k: v.cpu() for k, v in recorder.activation.items()}
 
