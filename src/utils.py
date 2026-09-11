@@ -53,6 +53,7 @@ def get_recording_files(results_folder: Path, model_names: list[str] | str, metr
             files.append(pred_parquet_path)
         elif csv_path.exists():
             files.append(csv_path)
+
         elif pred_csv_path.exists():
             files.append(pred_csv_path)
         else:
