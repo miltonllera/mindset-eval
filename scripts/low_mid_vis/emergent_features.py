@@ -31,6 +31,8 @@ def record_from_model(
     metric: str,
     dataloader: DataLoader,
     results_folder: Path,
+    record_from: list[str] | None = None,
+    output_tag: str | None = None,
     flush_every_n_batches: int = 10,
 ):
     model_name, net = model
@@ -52,14 +54,21 @@ def record_from_model(
     else:
         raise ValueError(f"Unknown metric: {metric}")
 
-    recordings_file_path = results_folder / f"{metric}.parquet"
+    tag_suffix = f"_{output_tag}" if output_tag else ""
+    recordings_file_path = results_folder / f"{metric}{tag_suffix}.parquet"
     if recordings_file_path.exists():
         if recordings_file_path.is_dir():
             shutil.rmtree(recordings_file_path)
         else:
             recordings_file_path.unlink()
 
-    recorder = ActivationRecorder(net)
+    recorder = ActivationRecorder(net, record_from=record_from)
+    if not recorder._hooks:
+        _logger.warning(
+            f"No layers matched record_from pattern {record_from} for <{model_name}>. Skipping."
+        )
+        return None
+
     layer_names = []
     buffer_chunks = []
 
@@ -82,18 +91,20 @@ def record_from_model(
             bsz = len(batch['SampleID'])
             batch_layer_acts = {}
             for img_type in IMAGE_TYPES:
-                images = batch[f'{img_type}Image'].to(device)
+                images = batch[f'{img_type}Path'].to(device)
                 net(images)
                 batch_layer_acts[img_type] = {k: v.cpu() for k, v in recorder.activation.items()}
 
             layer_names = list(recorder.activation.keys())
             sample_ids = [int(x) for x in batch['SampleID']]
+            shape_types = list(batch['ShapeType'])
 
             for ref_type, comp_type in COMPARISONS:
                 ref_acts = batch_layer_acts[ref_type]
                 comp_acts = batch_layer_acts[comp_type]
                 chunk_dict = {
                     'SampleID': sample_ids,
+                    'ShapeType': shape_types,
                     'Comparison': [f'{ref_type}_vs_{comp_type}'] * bsz,
                 }
                 for k in layer_names:
@@ -114,7 +125,7 @@ def record_from_model(
     # Consolidate partitions to eliminate fragmentation
     ddf = dd.read_parquet(recordings_file_path)
     if ddf.npartitions > 1:
-        temp_consolidated_path = results_folder / f"{metric}_consolidated.parquet"
+        temp_consolidated_path = results_folder / f"{metric}{tag_suffix}_consolidated.parquet"
         ddf.repartition(npartitions=1).to_parquet(
             temp_consolidated_path,
             engine="pyarrow",
@@ -123,13 +134,20 @@ def record_from_model(
         temp_consolidated_path.rename(recordings_file_path)
         ddf = dd.read_parquet(recordings_file_path)
 
-    plot_layer_scores(ddf, metric, results_folder, layer_names=layer_names)
+    plot_filename = f"{metric}_vs_layer{tag_suffix}.png"
+    plot_layer_scores(ddf, metric, results_folder, layer_names=layer_names, filename=plot_filename)
     _logger.info(f"Done. Results saved to: <{recordings_file_path}>")
 
     return recordings_file_path
 
 
-def record_all(annotations_file, model_names, results_folder):
+def record_all(
+    annotations_file,
+    model_names,
+    results_folder,
+    record_from=None,
+    output_tag=None,
+):
     variant = Path(annotations_file).parts[-2]
     recording_paths = []
     for model_name in model_names:
@@ -140,9 +158,16 @@ def record_all(annotations_file, model_names, results_folder):
             transform=model_transform(model),
         )
         dataloader = DataLoader(dataset, batch_size=32, shuffle=False)
-        recording_paths.append(
-            record_from_model((model_name, model), "cossim", dataloader, results_folder / variant)
+        path = record_from_model(
+            (model_name, model),
+            "cossim",
+            dataloader,
+            results_folder / variant,
+            record_from=record_from,
+            output_tag=output_tag,
         )
+        if path:
+            recording_paths.append(path)
 
     _logger.info("All recordings completed.")
     return recording_paths
@@ -151,6 +176,8 @@ def record_all(annotations_file, model_names, results_folder):
 def main(
     annotations_file,
     model_names,
+    record_from=None,
+    output_tag=None,
     results_folder='',
     overwrite_recordings=False,
 ):
@@ -161,7 +188,13 @@ def main(
     if not results_folder.exists() or overwrite_recordings:
         results_folder.mkdir(parents=True, exist_ok=True)
         _logger.info(f"Set results root folder to {results_folder}")
-        record_all(annotations_file, model_names, results_folder)
+        record_all(
+            annotations_file,
+            model_names,
+            results_folder,
+            record_from=record_from,
+            output_tag=output_tag,
+        )
     else:
         get_recording_files(results_folder, model_names, 'cossim')
 
@@ -176,6 +209,12 @@ if __name__ == "__main__":
     )
     parser.add_argument("--results_folder", type=str, default='data/results',
         help="Experiment folder where to store all results"
+    )
+    parser.add_argument("--record_from", type=str, nargs='+', default=None,
+        help="Layer names, regex patterns, or stream specs to record from (e.g. 'stages\\.\\d+\\.blocks\\.\\d+:all')"
+    )
+    parser.add_argument("--output_tag", type=str, default=None,
+        help="Optional tag to append to output recording and plot filenames"
     )
     parser.add_argument("--overwrite_recordings", action='store_true',
         help="Overwrite the recording file if it already exists"

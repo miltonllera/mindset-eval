@@ -5,6 +5,11 @@ import torch
 import torch.nn as nn
 import lightning.pytorch as pl
 from torchmetrics import Accuracy, R2Score
+from src.layer_spec import (
+    resolve_layer_targets,
+    extract_stream_tensor,
+    sanitize_key_for_module_dict,
+)
 
 
 logging.basicConfig(level=logging.INFO)
@@ -52,7 +57,8 @@ class FeatureDecoder(pl.LightningModule):
         for k, v in self._extracted_features.items():
             if len(v.shape) > 2:
                 v = v.flatten(1)
-            decoder_preds[k] = self._decoders[k](v)
+            safe_k = sanitize_key_for_module_dict(k)
+            decoder_preds[k] = self._decoders[safe_k](v)
 
         self._extracted_features.clear()
         return decoder_preds
@@ -131,8 +137,9 @@ class FeatureDecoder(pl.LightningModule):
             else:
                 feature_shape = v.shape[-1]
 
+            safe_k = sanitize_key_for_module_dict(k)
             self._decoders.add_module(
-                k,
+                safe_k,
                 nn.Sequential(
                     nn.BatchNorm1d(feature_shape),
                     nn.Linear(feature_shape, 64),
@@ -144,33 +151,15 @@ class FeatureDecoder(pl.LightningModule):
         self._extracted_features.clear()
 
     def _register_hooks(self):
-        for pattern in self.decode_from:
-            has_match = False
-            for idx, layer in enumerate(self._leaf_layers()):
-                name = f"{idx}: {type(layer).__name__}"
-                if re.search(pattern, name):
-                    self._hooks.append(layer.register_forward_hook(self._make_hook(name)))
-                    has_match = True
-            if not has_match:
-                _logger.warning(f"Layer pattern name {pattern} did not have any matches.")
+        targets = resolve_layer_targets(self.net, self.decode_from)
+        for name, layer, stream in targets:
+            self._hooks.append(layer.register_forward_hook(self._make_hook(name, stream)))
 
-    def _make_hook(self, name):
-        def hook(_module, _input, output):
-            self._extracted_features[name] = (output.detach() if self.finetune_model else output)
+    def _make_hook(self, name: str, stream: str):
+        def hook(_module, args, output):
+            val = extract_stream_tensor(args, output, stream, layer_name=name)
+            self._extracted_features[name] = (val.detach() if not self.finetune_model else val)
         return hook
-
-    def _leaf_layers(self):
-        layers = []
-
-        def collect(module):
-            for child in module.children():
-                if list(child.children()):
-                    collect(child)
-                else:
-                    layers.append(child)
-
-        collect(self.net)
-        return layers
 
 def flatten_model(modules):
     def flatten_list(_2d_list):

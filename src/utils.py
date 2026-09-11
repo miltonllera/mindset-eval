@@ -17,15 +17,11 @@ def setup_logging(module_name):
     return _logger
 
 
-def init_model(model_name, verbose=False):
-    model = timm.create_model(  # type: ignore
-        model_name, pretrained=True, cache_dir="data/models/"
-    ).to(get_device())
-
+def init_model(model_name, pretrained=True, verbose=False):
+    model = timm.create_model(model_name, pretrained=pretrained, cache_dir="data/models/")
     if verbose:
         print(model)
-
-    return model
+    return model.to(get_device())
 
 
 def get_device() -> torch.device:

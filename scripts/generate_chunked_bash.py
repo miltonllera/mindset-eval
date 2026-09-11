@@ -1,12 +1,16 @@
 import argparse
 import math
 import os
-import re
+import sys
 from pathlib import Path
 from typing import Optional
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 from src.utils import init_model, setup_logging
-from scripts.print_model_layers import get_leaf_layers
+from src.layer_spec import resolve_layer_targets
 
 _logger = setup_logging(__name__)
 
@@ -48,21 +52,13 @@ def generate_bash_script(
     results_folder: Optional[str] = None,
 ) -> str:
     """Extract layers matching patterns and generate a chunked bash script."""
-    _logger.info(f"Loading model <{model_name}> to inspect leaf layers...")
+    _logger.info(f"Loading model <{model_name}> to resolve targets...")
     model = init_model(model_name)
-    leaf_layers = get_leaf_layers(model)
-
-    # Format names as FeatureDecoder does: f"{idx}: {type(layer).__name__}"
-    formatted_layers = [f"{idx}: {type(layer).__name__}" for idx, (_, layer) in enumerate(leaf_layers)]
-
-    # Filter layers by the provided patterns
-    matched_layers = []
-    for name in formatted_layers:
-        if any(re.search(p, name) for p in patterns):
-            matched_layers.append(name)
+    resolved = resolve_layer_targets(model, patterns)
+    matched_layers = [key for key, _, _ in resolved]
 
     _logger.info(
-        f"Found {len(matched_layers)} layers matching patterns {patterns} out of {len(formatted_layers)} leaf layers."
+        f"Resolved {len(matched_layers)} target layers matching patterns {patterns}."
     )
 
     chunks = partition_layers(matched_layers, num_chunks=num_chunks, chunk_size=chunk_size)
@@ -114,7 +110,7 @@ def generate_bash_script(
         lines.append("  --overwrite_recordings \\")
         lines.append("  --record_from \\")
         for layer_name in chunk:
-            lines.append(f'    "^{layer_name}$" \\')
+            lines.append(f'    "{layer_name}" \\')
         # Remove trailing slash from the last argument in the block
         lines[-1] = lines[-1][:-2]
         lines.append("")
@@ -146,7 +142,7 @@ def main():
         type=str,
         nargs="+",
         default=["Conv2d", "Linear"],
-        help="Layer types/regex patterns to extract (default: Conv2d Linear)",
+        help="Layer patterns/regexes to extract (e.g. 'stages\\.\\d+\\.blocks\\.\\d+:all' or 'blocks\\.\\d+:out')",
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(

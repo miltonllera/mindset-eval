@@ -39,6 +39,8 @@ def record_from_model(
     metric: str,
     annotations_file: str,
     results_folder: Path,
+    record_from: list[str] | None = None,
+    output_tag: str | None = None,
 ):
     model_name, net = model
 
@@ -62,7 +64,7 @@ def record_from_model(
         filter_factor_level={},
         distance_metric=metric,
         net=net,
-        only_save=["Conv2d", "Linear"],
+        only_save=record_from if record_from is not None else ["Conv2d", "Linear"],
     )
 
     distance_df, layer_names = recorder.compute_from_annotation(
@@ -81,18 +83,21 @@ def record_from_model(
     )
 
     _logger.info(f"Recording finished. Figures in: <{results_folder}>")
-    recordings_file_path = results_folder / f"{metric}.csv"
+    tag_suffix = f"_{output_tag}" if output_tag else ""
+    recordings_file_path = results_folder / f"{metric}{tag_suffix}.csv"
     distance_df.to_csv(recordings_file_path)
 
     return recordings_file_path
 
 
-def record_all(annotations_file, model_names, results_folder):
+def record_all(annotations_file, model_names, results_folder, record_from=None, output_tag=None):
     record = partial(
         record_from_model,
-        metric= "cossim",
+        metric="cossim",
         annotations_file=annotations_file,
         results_folder=results_folder,
+        record_from=record_from,
+        output_tag=output_tag,
     )
 
     recording_paths = []
@@ -107,6 +112,8 @@ def main(
     annotations_file,
     shape_type,
     model_names,
+    record_from=None,
+    output_tag=None,
     save_folder='',
     overwrite_recordings=False,
     comparison_levels=None,
@@ -123,7 +130,13 @@ def main(
     if not results_folder.exists() or overwrite_recordings:
         results_folder.mkdir(parents=True, exist_ok=True)
         _logger.info(f"Set results root folder to {RESULTS_ROOT}")
-        recording_files = record_all(annotations_file, model_names, results_folder)
+        recording_files = record_all(
+            annotations_file,
+            model_names,
+            results_folder,
+            record_from=record_from,
+            output_tag=output_tag,
+        )
     else:
         recording_files = get_recording_files(results_folder, model_names)
 
@@ -142,6 +155,12 @@ if __name__ == "__main__":
     parser.add_argument("--shape_type", type=str,
         choices=["2d_lines", "geons_standard", "geons_no_shades", "silhouettes"],
         help="Change type applied to the basis images"
+    )
+    parser.add_argument("--record_from", type=str, nargs='+', default=None,
+        help="Layer names, regex patterns, or stream specs to record from"
+    )
+    parser.add_argument("--output_tag", type=str, default=None,
+        help="Optional tag to append to output recording filenames"
     )
     parser.add_argument("--save_folder", type=str, default='',
         help="Experiment folder where to store all results"
