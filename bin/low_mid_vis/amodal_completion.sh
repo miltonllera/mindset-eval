@@ -8,12 +8,16 @@
 
 
 MODELS=(
-  "resnet50s.gluon_in1k"
-  "resnet101.gluon_in1k"
+  # "resnet50s.gluon_in1k"
+  # "resnet101.gluon_in1k"
+  "resnext101_32x8d.fb_swsl_ig1b_ft_in1k"
+  "resnext101_32x4d.fb_swsl_ig1b_ft_in1k"
 )
 
 RECORD_FROM=(
-  "^act1:out ^layer[1-4]\.[0-5]\.act3:out ^fc:out"
+  # "^act1:out ^layer[1-4]\.[0-5]\.act3:out ^fc:out"
+  # "^act1:out ^layer[1-4]\.[0-9]\.act3:out ^layer[1-4]\.[0-4][0-9]\.act3:out ^fc:out"
+  "^act1:out ^layer[1-4]\.[0-9]\.act3:out ^layer[1-4]\.[0-4][0-9]\.act3:out ^fc:out"
   "^act1:out ^layer[1-4]\.[0-9]\.act3:out ^layer[1-4]\.[0-4][0-9]\.act3:out ^fc:out"
 )
 
@@ -29,7 +33,9 @@ done
 
 
 RECORD_FROM=(
-  "^act1:in ^layer[1-4]\.[0-5]\.act3:in ^fc:in"
+  # "^act1:in ^layer[1-4]\.[0-5]\.act3:in ^fc:in"
+  # "^act1:in ^layer[1-4]\.[0-9]\.act3:in ^layer[1-4]\.[0-4][0-9]\.act3:in ^fc:in"
+  "^act1:in ^layer[1-4]\.[0-9]\.act3:in ^layer[1-4]\.[0-4][0-9]\.act3:in ^fc:in"
   "^act1:in ^layer[1-4]\.[0-9]\.act3:in ^layer[1-4]\.[0-4][0-9]\.act3:in ^fc:in"
 )
 
@@ -45,7 +51,9 @@ done
 
 
 RECORD_FROM=(
-  "^layer[1-4]\.[0-5]\.bn3:out"
+  # "^layer[1-4]\.[0-5]\.bn3:out"
+  # "^layer[1-4]\.[0-9]\.bn3:out ^layer[1-4]\.[0-4][0-9]\.bn3:out"
+  "^layer[1-4]\.[0-9]\.bn3:out ^layer[1-4]\.[0-4][0-9]\.bn3:out"
   "^layer[1-4]\.[0-9]\.bn3:out ^layer[1-4]\.[0-4][0-9]\.bn3:out"
 )
 
