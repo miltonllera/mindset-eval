@@ -6,7 +6,7 @@ with extensibility for VLMs and JEPA architectures.
 
 Usage:
     uv run python scripts/explore_model.py
-    uv run python scripts/explore_model.py --model resnet50s.gluon_in1k
+    uv run python scripts/explore_model.py --model convnext_tiny.fb_in1k
     uv run python scripts/explore_model.py --port 8080 --no-browser
 """
 
@@ -158,9 +158,9 @@ def inspect_architecture(
     model: nn.Module,
     input_size: Union[Tuple[int, ...], List[Tuple[int, ...]]],
     depth: Optional[int] = 3,
-    direction: str = "TB",
+    direction: str = "LR",
 ) -> Dict[str, Any]:
-    """Extract hierarchy, exact runtime shapes via hooks, and computation graph."""
+    """Extract hierarchy, exact runtime shapes via hooks, and full computation DAG."""
     model = model.cpu().eval()
     device = torch.device("cpu")
 
@@ -317,17 +317,17 @@ def inspect_architecture(
 
     valid_node_ids = {n["data"]["id"] for n in cytoscape_nodes}
 
-    # Generate Computation Graph via torchview if available
+    # Generate Computation Graph via torchview at full infinite depth
     svg_content = ""
     cytoscape_edges: List[Dict[str, Any]] = []
 
     if draw_graph is not None:
         try:
-            depth_val = float("inf") if (depth is None or depth >= 6) else depth
+            # Full depth trace guarantees all nested blocks, MLPs, and residual skips are caught
             cg = draw_graph(
                 model,
                 input_size=input_size,
-                depth=depth_val,
+                depth=float("inf"),
                 device="cpu",
                 graph_dir=direction,
                 expand_nested=True,
@@ -404,7 +404,6 @@ def inspect_architecture(
         if e["data"]["source"] in valid_node_ids and e["data"]["target"] in valid_node_ids
     ]
 
-    # Return unified response
     return {
         "model_info": {
             "name": getattr(model, "default_cfg", {}).get("architecture", type(model).__name__),
@@ -503,15 +502,15 @@ HTML_PAGE = """<!DOCTYPE html>
     <div class="flex items-center gap-3">
       <!-- Preset Model Dropdown -->
       <div class="relative">
-        <select id="preset-select" class="bg-surface-900 border border-surface-600 rounded-md px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-500 max-w-[240px]">
+        <select id="preset-select" class="bg-surface-900 border border-surface-600 rounded-md px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-500 max-w-[220px]">
           <option value="">-- Presets (bin/low_mid_vis) --</option>
         </select>
       </div>
 
       <!-- Custom Model Input -->
       <div class="relative">
-        <input id="model-input" type="text" placeholder="timm model (e.g. resnet50s.gluon_in1k)"
-          class="bg-surface-900 border border-surface-600 rounded-md px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 w-64 focus:outline-none focus:ring-1 focus:ring-brand-500">
+        <input id="model-input" type="text" placeholder="timm model (e.g. convnext_tiny.fb_in1k)"
+          class="bg-surface-900 border border-surface-600 rounded-md px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 w-56 focus:outline-none focus:ring-1 focus:ring-brand-500">
       </div>
 
       <!-- Input Shape -->
@@ -521,17 +520,20 @@ HTML_PAGE = """<!DOCTYPE html>
           class="bg-surface-900 border border-surface-600 rounded-md px-2.5 py-1.5 text-xs text-slate-200 w-28 focus:outline-none focus:ring-1 focus:ring-brand-500">
       </div>
 
-      <!-- Depth Slider -->
-      <div class="flex items-center gap-2 bg-surface-900/60 border border-surface-700 rounded-md px-2.5 py-1">
-        <span class="text-xs text-slate-400">Depth: <span id="depth-val" class="font-mono text-indigo-400 font-bold">3</span></span>
-        <input id="depth-slider" type="range" min="1" max="6" value="3" class="w-16 accent-indigo-500 cursor-pointer">
+      <!-- Direction Toggle -->
+      <div class="flex items-center gap-1.5">
+        <span class="text-xs text-slate-400">Direction:</span>
+        <select id="dir-select" class="bg-surface-900 border border-surface-600 rounded-md px-2 py-1.5 text-xs text-slate-200 focus:outline-none">
+          <option value="LR" selected>Left &rarr; Right (LR)</option>
+          <option value="TB">Top &rarr; Down (TB)</option>
+        </select>
       </div>
 
-      <!-- Direction Toggle -->
-      <select id="dir-select" class="bg-surface-900 border border-surface-600 rounded-md px-2 py-1.5 text-xs text-slate-200 focus:outline-none">
-        <option value="TB">Top-Down (TB)</option>
-        <option value="LR">Left-Right (LR)</option>
-      </select>
+      <!-- Depth Slider (UI filtering) -->
+      <div class="flex items-center gap-2 bg-surface-900/60 border border-surface-700 rounded-md px-2.5 py-1">
+        <span class="text-xs text-slate-400">Depth: <span id="depth-val" class="font-mono text-indigo-400 font-bold">All</span></span>
+        <input id="depth-slider" type="range" min="1" max="6" value="6" class="w-16 accent-indigo-500 cursor-pointer">
+      </div>
 
       <!-- Inspect Button -->
       <button id="inspect-btn" class="bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-medium px-4 py-1.5 rounded-md text-xs transition flex items-center gap-2 shadow">
@@ -555,8 +557,8 @@ HTML_PAGE = """<!DOCTYPE html>
     <div class="flex items-center gap-2">
       <span class="text-xs text-slate-400 font-medium">View:</span>
       <div class="flex bg-surface-900 p-0.5 rounded-lg border border-surface-700 text-xs">
-        <button id="tab-svg" class="view-tab active px-3 py-1 rounded-md font-medium transition bg-brand-600 text-white">Execution DAG (SVG)</button>
-        <button id="tab-cyto" class="view-tab px-3 py-1 rounded-md font-medium transition text-slate-400 hover:text-slate-200">Compound Graph</button>
+        <button id="tab-cyto" class="view-tab active px-3 py-1 rounded-md font-medium transition bg-brand-600 text-white">Compound Graph</button>
+        <button id="tab-svg" class="view-tab px-3 py-1 rounded-md font-medium transition text-slate-400 hover:text-slate-200">Execution DAG (SVG)</button>
         <button id="tab-tree" class="view-tab px-3 py-1 rounded-md font-medium transition text-slate-400 hover:text-slate-200">Hierarchy Table</button>
       </div>
     </div>
@@ -564,7 +566,7 @@ HTML_PAGE = """<!DOCTYPE html>
     <!-- Search & Regex Highlight -->
     <div class="flex items-center gap-2">
       <div class="relative flex items-center">
-        <input id="filter-input" type="text" placeholder="Highlight layers / regex (e.g. act3, conv1)..."
+        <input id="filter-input" type="text" placeholder="Highlight layers / regex (e.g. shortcut, dw, conv)..."
           class="bg-surface-900 border border-surface-600 rounded-md pl-3 pr-8 py-1 text-xs text-slate-200 w-72 focus:outline-none focus:ring-1 focus:ring-sky-500">
         <span id="filter-count" class="absolute right-2 text-[10px] text-slate-400"></span>
       </div>
@@ -583,24 +585,25 @@ HTML_PAGE = """<!DOCTYPE html>
         <p id="loading-msg" class="text-sm font-medium text-slate-300">Extracting model hierarchy and tracing shapes...</p>
       </div>
 
-      <!-- View 1: Interactive SVG DAG -->
-      <div id="view-svg" class="view-panel w-full h-full flex items-center justify-center overflow-hidden">
-        <div id="svg-container" class="w-full h-full flex items-center justify-center overflow-hidden">
-          <div class="text-slate-500 text-sm">Select a model and click "Inspect" to view architecture.</div>
-        </div>
-      </div>
-
-      <!-- View 2: Cytoscape Compound Graph -->
-      <div id="view-cyto" class="view-panel hidden w-full h-full relative">
+      <!-- View 1: Cytoscape Compound Graph (Default) -->
+      <div id="view-cyto" class="view-panel w-full h-full relative">
         <div id="cy" class="w-full h-full"></div>
         <div class="absolute bottom-3 left-3 bg-surface-800/90 border border-surface-700 rounded-lg p-2.5 text-xs text-slate-400 shadow-lg pointer-events-none">
           <div class="font-medium text-slate-200 mb-1">Compound Graph Legend:</div>
-          <div class="flex items-center gap-2">
-            <span class="inline-block w-3 h-3 rounded bg-blue-500/30 border border-blue-400"></span> Conv2d
-            <span class="inline-block w-3 h-3 rounded bg-emerald-500/30 border border-emerald-400"></span> Linear
-            <span class="inline-block w-3 h-3 rounded bg-amber-500/30 border border-amber-400"></span> Norm
-            <span class="inline-block w-3 h-3 rounded bg-purple-500/30 border border-purple-400"></span> Activation
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="inline-block w-3 h-3 rounded bg-blue-700 border border-blue-400"></span> Conv2d
+            <span class="inline-block w-3 h-3 rounded bg-emerald-600 border border-emerald-400"></span> Linear
+            <span class="inline-block w-3 h-3 rounded bg-amber-600 border border-amber-400"></span> Norm
+            <span class="inline-block w-3 h-3 rounded bg-purple-600 border border-purple-400"></span> Act / Identity
+            <span class="inline-block w-3 h-3 rounded bg-pink-700 border border-pink-400"></span> Attention
           </div>
+        </div>
+      </div>
+
+      <!-- View 2: Interactive SVG DAG -->
+      <div id="view-svg" class="view-panel hidden w-full h-full flex items-center justify-center overflow-hidden">
+        <div id="svg-container" class="w-full h-full flex items-center justify-center overflow-hidden">
+          <div class="text-slate-500 text-sm">Select a model and click "Inspect" to view architecture.</div>
         </div>
       </div>
 
@@ -656,9 +659,9 @@ HTML_PAGE = """<!DOCTYPE html>
     const presetSelect = document.getElementById('preset-select');
     const modelInput = document.getElementById('model-input');
     const shapeInput = document.getElementById('shape-input');
+    const dirSelect = document.getElementById('dir-select');
     const depthSlider = document.getElementById('depth-slider');
     const depthVal = document.getElementById('depth-val');
-    const dirSelect = document.getElementById('dir-select');
     const inspectBtn = document.getElementById('inspect-btn');
     const btnSpinner = document.getElementById('btn-spinner');
     const modelBadge = document.getElementById('model-badge');
@@ -672,11 +675,11 @@ HTML_PAGE = """<!DOCTYPE html>
     const toast = document.getElementById('toast');
 
     // Tab buttons & panels
-    const tabSvg = document.getElementById('tab-svg');
     const tabCyto = document.getElementById('tab-cyto');
+    const tabSvg = document.getElementById('tab-svg');
     const tabTree = document.getElementById('tab-tree');
-    const viewSvg = document.getElementById('view-svg');
     const viewCyto = document.getElementById('view-cyto');
+    const viewSvg = document.getElementById('view-svg');
     const viewTree = document.getElementById('view-tree');
 
     // Show toast message
@@ -722,15 +725,34 @@ HTML_PAGE = """<!DOCTYPE html>
       depthVal.textContent = depthSlider.value >= 6 ? 'All' : depthSlider.value;
     });
 
+    // Direction Change Listener
+    dirSelect.addEventListener('change', () => {
+      if (cyInstance) {
+        runDagreLayout();
+      }
+    });
+
     // Tab Switching
     function setView(tab) {
-      [tabSvg, tabCyto, tabTree].forEach(t => {
+      [tabCyto, tabSvg, tabTree].forEach(t => {
         t.classList.remove('bg-brand-600', 'text-white');
         t.classList.add('text-slate-400');
       });
-      [viewSvg, viewCyto, viewTree].forEach(v => v.classList.add('hidden'));
+      [viewCyto, viewSvg, viewTree].forEach(v => v.classList.add('hidden'));
 
-      if (tab === 'svg') {
+      if (tab === 'cyto') {
+        tabCyto.classList.add('bg-brand-600', 'text-white');
+        tabCyto.classList.remove('text-slate-400');
+        viewCyto.classList.remove('hidden');
+        if (cyInstance) {
+          try {
+            cyInstance.resize();
+            cyInstance.fit(null, 40);
+          } catch (e) {
+            console.warn('Cytoscape resize error:', e);
+          }
+        }
+      } else if (tab === 'svg') {
         tabSvg.classList.add('bg-brand-600', 'text-white');
         tabSvg.classList.remove('text-slate-400');
         viewSvg.classList.remove('hidden');
@@ -743,18 +765,6 @@ HTML_PAGE = """<!DOCTYPE html>
             console.warn('SVG resize error:', e);
           }
         }
-      } else if (tab === 'cyto') {
-        tabCyto.classList.add('bg-brand-600', 'text-white');
-        tabCyto.classList.remove('text-slate-400');
-        viewCyto.classList.remove('hidden');
-        if (cyInstance) {
-          try {
-            cyInstance.resize();
-            cyInstance.fit();
-          } catch (e) {
-            console.warn('Cytoscape resize error:', e);
-          }
-        }
       } else if (tab === 'tree') {
         tabTree.classList.add('bg-brand-600', 'text-white');
         tabTree.classList.remove('text-slate-400');
@@ -762,8 +772,8 @@ HTML_PAGE = """<!DOCTYPE html>
       }
     }
 
-    tabSvg.addEventListener('click', () => setView('svg'));
     tabCyto.addEventListener('click', () => setView('cyto'));
+    tabSvg.addEventListener('click', () => setView('svg'));
     tabTree.addEventListener('click', () => setView('tree'));
 
     // Inspect Model Action
@@ -777,7 +787,7 @@ HTML_PAGE = """<!DOCTYPE html>
       btnSpinner.classList.remove('hidden');
       inspectBtn.disabled = true;
       loadingOverlay.classList.remove('hidden');
-      loadingMsg.textContent = `Loading <${modelName}> and tracing computation graph...`;
+      loadingMsg.textContent = `Loading <${modelName}> and tracing computation graph at full depth...`;
 
       try {
         const payload = {
@@ -823,11 +833,11 @@ HTML_PAGE = """<!DOCTYPE html>
       modelBadge.classList.remove('hidden');
       modelBadge.textContent = `${info.name} (${(info.total_params / 1e6).toFixed(2)}M params, ${info.total_modules} modules)`;
 
-      // 2. Render SVG View
-      renderSvg(data.svg);
-
-      // 3. Render Cytoscape Graph
+      // 2. Render Cytoscape Graph (Default)
       renderCytoscape(data.cytoscape);
+
+      // 3. Render SVG View
+      renderSvg(data.svg);
 
       // 4. Render Hierarchy Tree Table
       renderTreeTable(data.hierarchy);
@@ -835,6 +845,138 @@ HTML_PAGE = """<!DOCTYPE html>
       // 5. Select first module if available
       if (data.hierarchy && data.hierarchy.length > 0) {
         selectModule(data.hierarchy[0].id);
+      }
+    }
+
+    // Run Dagre Layout with generous node separation and rank separation
+    function runDagreLayout() {
+      if (!cyInstance) return;
+      cyInstance.layout({
+        name: 'dagre',
+        rankDir: dirSelect.value,
+        nodeSep: 60,
+        rankSep: 90,
+        padding: 40
+      }).run();
+    }
+
+    // Render Cytoscape Graph
+    function renderCytoscape(cyData) {
+      if (cyInstance) {
+        try {
+          cyInstance.destroy();
+        } catch (e) {
+          console.warn('Destroy cyInstance warning:', e);
+        }
+        cyInstance = null;
+      }
+
+      try {
+        cyInstance = cytoscape({
+          container: document.getElementById('cy'),
+          elements: {
+            nodes: cyData.nodes || [],
+            edges: cyData.edges || []
+          },
+          layout: {
+            name: 'dagre',
+            rankDir: dirSelect.value,
+            nodeSep: 60,
+            rankSep: 90,
+            padding: 40
+          },
+          style: [
+            {
+              selector: 'node',
+              style: {
+                'label': 'data(label)',
+                'text-valign': 'center',
+                'text-halign': 'center',
+                'font-size': '10px',
+                'color': '#f8fafc',
+                'background-color': '#1e293b',
+                'border-width': 1.5,
+                'border-color': '#475569',
+                'shape': 'roundrectangle',
+                'padding': '8px',
+                'text-wrap': 'wrap'
+              }
+            },
+            {
+              selector: 'node:parent',
+              style: {
+                'background-color': '#0f172a',
+                'background-opacity': 0.45,
+                'border-color': '#4f46e5',
+                'border-width': 2,
+                'text-valign': 'top',
+                'text-halign': 'center',
+                'font-size': '11px',
+                'font-weight': 'bold',
+                'color': '#818cf8',
+                'padding': '16px'
+              }
+            },
+            {
+              selector: 'node[category="conv"]',
+              style: { 'background-color': '#1e3a8a', 'border-color': '#3b82f6' }
+            },
+            {
+              selector: 'node[category="linear"]',
+              style: { 'background-color': '#064e3b', 'border-color': '#10b981' }
+            },
+            {
+              selector: 'node[category="norm"]',
+              style: { 'background-color': '#78350f', 'border-color': '#f59e0b' }
+            },
+            {
+              selector: 'node[category="act"]',
+              style: { 'background-color': '#581c87', 'border-color': '#a855f7' }
+            },
+            {
+              selector: 'node[category="attention"]',
+              style: { 'background-color': '#831843', 'border-color': '#ec4899' }
+            },
+            {
+              selector: 'node.selected',
+              style: {
+                'border-color': '#38bdf8',
+                'border-width': 3,
+                'shadow-blur': 12,
+                'shadow-color': '#38bdf8',
+                'shadow-opacity': 0.8
+              }
+            },
+            {
+              selector: 'edge',
+              style: {
+                'width': 2,
+                'line-color': '#64748b',
+                'target-arrow-color': '#64748b',
+                'target-arrow-shape': 'triangle',
+                'curve-style': 'bezier',
+                'control-point-step-size': 50,
+                'arrow-scale': 0.9,
+                'label': 'data(shape)',
+                'font-size': '8px',
+                'color': '#94a3b8',
+                'text-background-color': '#0f172a',
+                'text-background-opacity': 0.8,
+                'text-background-padding': '2px',
+                'text-rotation': 'autorotate'
+              }
+            }
+          ]
+        });
+
+        cyInstance.on('tap', 'node', (e) => {
+          const node = e.target;
+          selectModule(node.id());
+        });
+
+      } catch (err) {
+        console.error('Cytoscape render error:', err);
+        document.getElementById('cy').innerHTML = `<div class="p-6 text-amber-400 text-xs">Compound graph render notice: ${err.message}. Switch to Execution DAG or Hierarchy Table.</div>`;
       }
     }
 
@@ -877,7 +1019,6 @@ HTML_PAGE = """<!DOCTYPE html>
         });
       });
 
-      // Safely initialize panZoom in next animation frame with dimension check
       requestAnimationFrame(() => {
         try {
           const rect = svgElem.getBoundingClientRect();
@@ -897,125 +1038,6 @@ HTML_PAGE = """<!DOCTYPE html>
           container.style.overflow = 'auto';
         }
       });
-    }
-
-    // Render Cytoscape Graph
-    function renderCytoscape(cyData) {
-      if (cyInstance) {
-        try {
-          cyInstance.destroy();
-        } catch (e) {
-          console.warn('Destroy cyInstance warning:', e);
-        }
-        cyInstance = null;
-      }
-
-      try {
-        cyInstance = cytoscape({
-          container: document.getElementById('cy'),
-          elements: {
-            nodes: cyData.nodes || [],
-            edges: cyData.edges || []
-          },
-          layout: {
-            name: 'dagre',
-            rankDir: dirSelect.value,
-            nodeSep: 40,
-            rankSep: 60,
-            padding: 30
-          },
-          style: [
-            {
-              selector: 'node',
-              style: {
-                'label': 'data(label)',
-                'text-valign': 'center',
-                'text-halign': 'center',
-                'font-size': '10px',
-                'color': '#f8fafc',
-                'background-color': '#1e293b',
-                'border-width': 1.5,
-                'border-color': '#475569',
-                'shape': 'roundrectangle',
-                'padding': '8px',
-                'text-wrap': 'wrap'
-              }
-            },
-            {
-              selector: 'node:parent',
-              style: {
-                'background-color': '#0f172a',
-                'background-opacity': 0.6,
-                'border-color': '#6366f1',
-                'border-width': 2,
-                'text-valign': 'top',
-                'text-halign': 'center',
-                'font-size': '11px',
-                'font-weight': 'bold',
-                'color': '#818cf8',
-                'padding': '14px'
-              }
-            },
-            {
-              selector: 'node[category="conv"]',
-              style: { 'background-color': '#1e3a8a', 'border-color': '#3b82f6' }
-            },
-            {
-              selector: 'node[category="linear"]',
-              style: { 'background-color': '#064e3b', 'border-color': '#10b981' }
-            },
-            {
-              selector: 'node[category="norm"]',
-              style: { 'background-color': '#78350f', 'border-color': '#f59e0b' }
-            },
-            {
-              selector: 'node[category="act"]',
-              style: { 'background-color': '#581c87', 'border-color': '#a855f7' }
-            },
-            {
-              selector: 'node[category="attention"]',
-              style: { 'background-color': '#831843', 'border-color': '#ec4899' }
-            },
-            {
-              selector: 'node.selected',
-              style: {
-                'border-color': '#38bdf8',
-                'border-width': 3,
-                'shadow-blur': 12,
-                'shadow-color': '#38bdf8',
-                'shadow-opacity': 0.8
-              }
-            },
-            {
-              selector: 'edge',
-              style: {
-                'width': 1.5,
-                'line-color': '#64748b',
-                'target-arrow-color': '#64748b',
-                'target-arrow-shape': 'triangle',
-                'curve-style': 'bezier',
-                'arrow-scale': 0.8,
-                'label': 'data(shape)',
-                'font-size': '8px',
-                'color': '#94a3b8',
-                'text-background-color': '#0f172a',
-                'text-background-opacity': 0.8,
-                'text-background-padding': '2px',
-                'text-rotation': 'autorotate'
-              }
-            }
-          ]
-        });
-
-        cyInstance.on('tap', 'node', (e) => {
-          const node = e.target;
-          selectModule(node.id());
-        });
-
-      } catch (err) {
-        console.error('Cytoscape render error:', err);
-        document.getElementById('cy').innerHTML = `<div class="p-6 text-amber-400 text-xs">Compound graph render notice: ${err.message}. Switch to Execution DAG or Hierarchy Table.</div>`;
-      }
     }
 
     // Render Hierarchy Table
@@ -1055,7 +1077,6 @@ HTML_PAGE = """<!DOCTYPE html>
         tbody.appendChild(tr);
       });
 
-      // Attach copy listeners
       document.querySelectorAll('.copy-spec-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -1072,10 +1093,8 @@ HTML_PAGE = """<!DOCTYPE html>
       const item = currentData.hierarchy.find(m => m.id === moduleId);
       if (!item) return;
 
-      // Update badge
       selectedTypeBadge.textContent = item.class_name;
 
-      // Highlight in Cytoscape
       if (cyInstance) {
         try {
           cyInstance.nodes().removeClass('selected');
@@ -1084,14 +1103,12 @@ HTML_PAGE = """<!DOCTYPE html>
         } catch (e) {}
       }
 
-      // Highlight in Tree table
       document.querySelectorAll('#tree-table-body tr').forEach(r => r.classList.remove('bg-surface-700/60'));
       const activeRow = document.getElementById(`tree-row-${moduleId}`);
       if (activeRow) {
         activeRow.classList.add('bg-surface-700/60');
       }
 
-      // Highlight in SVG
       const container = document.getElementById('svg-container');
       const allSvgNodes = container.querySelectorAll('.node, .cluster');
       allSvgNodes.forEach(n => n.classList.remove('node-highlight'));
@@ -1102,7 +1119,6 @@ HTML_PAGE = """<!DOCTYPE html>
         }
       });
 
-      // Populate Inspector Sidebar
       const inStr = item.input_shape ? JSON.stringify(item.input_shape, null, 2) : 'N/A';
       const outStr = item.output_shape ? JSON.stringify(item.output_shape, null, 2) : 'N/A';
 
@@ -1199,7 +1215,6 @@ HTML_PAGE = """<!DOCTYPE html>
         </div>
       `;
 
-      // Attach copy buttons
       document.querySelectorAll('.spec-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           navigator.clipboard.writeText(btn.dataset.val);
@@ -1215,7 +1230,7 @@ HTML_PAGE = """<!DOCTYPE html>
 
       if (!q) {
         filterCount.textContent = '';
-        if (cyInstance) cyInstance.nodes().removeClass('highlighted');
+        if (cyInstance) cyInstance.nodes().removeClass('selected');
         return;
       }
 
@@ -1239,7 +1254,6 @@ HTML_PAGE = """<!DOCTYPE html>
 
       filterCount.textContent = `${count} matches`;
 
-      // Highlight in Cytoscape
       if (cyInstance) {
         cyInstance.nodes().forEach(node => {
           const match = regex ? (regex.test(node.id()) || regex.test(node.data('class_name'))) : node.id().toLowerCase().includes(q.toLowerCase());
@@ -1254,16 +1268,16 @@ HTML_PAGE = """<!DOCTYPE html>
 
     // Zoom Fit Button
     zoomFitBtn.addEventListener('click', () => {
+      if (cyInstance) {
+        try {
+          cyInstance.fit(null, 40);
+        } catch (e) {}
+      }
       if (panZoomInstance) {
         try {
           panZoomInstance.reset();
           panZoomInstance.fit();
           panZoomInstance.center();
-        } catch (e) {}
-      }
-      if (cyInstance) {
-        try {
-          cyInstance.fit();
         } catch (e) {}
       }
     });
@@ -1357,7 +1371,7 @@ class ArchitectureExplorerHandler(http.server.BaseHTTPRequestHandler):
                 model_name = data.get("model_name", "").strip()
                 input_size_str = data.get("input_size")
                 depth = data.get("depth", 3)
-                direction = data.get("direction", "TB")
+                direction = data.get("direction", "LR")
                 custom_loader = data.get("custom_loader")
 
                 if not model_name:
@@ -1409,7 +1423,7 @@ def main():
         "--model",
         type=str,
         default=None,
-        help="Model architecture name to open directly (e.g. resnet50s.gluon_in1k)",
+        help="Model architecture name to open directly (e.g. convnext_tiny.fb_in1k)",
     )
     parser.add_argument(
         "--port",
