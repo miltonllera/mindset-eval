@@ -2,11 +2,11 @@
 
 A lightweight, zero-extra-dependency local web app and CLI tool to interactively explore,
 expand/collapse, inspect connections, and view tensor input/output shapes for PyTorch / timm models,
-with extensibility for VLMs and JEPA architectures.
+with full functional operation tracing (add, matmul, attention, cat) and extensibility for VLMs and JEPA architectures.
 
 Usage:
     uv run python scripts/explore_model.py
-    uv run python scripts/explore_model.py --model convnext_tiny.fb_in1k
+    uv run python scripts/explore_model.py --model vit_base_patch16_clip_224.openai_ft_in12k_in1k
     uv run python scripts/explore_model.py --port 8080 --no-browser
 """
 
@@ -22,7 +22,7 @@ import urllib.parse
 import webbrowser
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -84,6 +84,22 @@ CATALOG = {
         "swin_s3_base_224.ms_in1k",
         "swinv2_base_window12to16_192to256.ms_in22k_ft_in1k",
     ],
+}
+
+# Key mathematical and stream aggregation operations to include in the graph
+SEMANTIC_OPS: Set[str] = {
+    "add",
+    "add_",
+    "scaled_dot_product_attention",
+    "matmul",
+    "bmm",
+    "softmax",
+    "cat",
+    "concat",
+    "unbind",
+    "split",
+    "mul",
+    "mul_",
 }
 
 
@@ -160,7 +176,7 @@ def inspect_architecture(
     depth: Optional[int] = 3,
     direction: str = "LR",
 ) -> Dict[str, Any]:
-    """Extract hierarchy, exact runtime shapes via hooks, and full computation DAG."""
+    """Extract hierarchy, runtime shapes via hooks, and full computation DAG with functional ops."""
     model = model.cpu().eval()
     device = torch.device("cpu")
 
@@ -296,7 +312,7 @@ def inspect_architecture(
         mod_id_to_entry[id(mod)] = entry
         path_to_entry[path] = entry
 
-    # Cytoscape compound nodes
+    # Base Cytoscape module nodes
     cytoscape_nodes: List[Dict[str, Any]] = []
     for item in hierarchy:
         cytoscape_nodes.append({
@@ -323,7 +339,7 @@ def inspect_architecture(
 
     if draw_graph is not None:
         try:
-            # Full depth trace guarantees all nested blocks, MLPs, and residual skips are caught
+            # Full depth trace guarantees all nested blocks, MLPs, attention ops, and residual skips are caught
             cg = draw_graph(
                 model,
                 input_size=input_size,
@@ -343,20 +359,95 @@ def inspect_architecture(
                 _logger.warning(f"Graphviz SVG pipe error: {e}")
                 svg_content = f"<div class='p-4 text-amber-500'>Graphviz SVG render unavailable: {e}</div>"
 
-            # Build direct module-to-module edges by traversing past FunctionNodes and TensorNodes
+            # Map FunctionNodes to enclosing parent module paths using cg.node_hierarchy
+            def walk_hierarchy(item: Any, current_mod: Optional[str] = None):
+                if isinstance(item, dict):
+                    for k, v in item.items():
+                        mod_path = current_mod
+                        if type(k).__name__ == "ModuleNode":
+                            cu_id = getattr(k, "compute_unit_id", None)
+                            if cu_id in mod_id_to_entry:
+                                mod_path = mod_id_to_entry[cu_id]["id"]
+                        yield from walk_hierarchy(v, mod_path)
+                elif isinstance(item, list):
+                    for elem in item:
+                        yield from walk_hierarchy(elem, current_mod)
+                else:
+                    if type(item).__name__ == "FunctionNode":
+                        yield (item, current_mod)
+
+            fn_parents: Dict[Any, Optional[str]] = dict(walk_hierarchy(cg.node_hierarchy))
+
+            # Helper for op symbols
+            def get_op_symbol(op_name: str) -> str:
+                if "add" in op_name:
+                    return "+"
+                if "matmul" in op_name or "bmm" in op_name:
+                    return "×"
+                if "attention" in op_name:
+                    return "⚡"
+                if "softmax" in op_name:
+                    return "σ"
+                if "cat" in op_name:
+                    return "⫴"
+                if "unbind" in op_name or "split" in op_name:
+                    return "⑂"
+                if "mul" in op_name:
+                    return "*"
+                return "ƒ"
+
+            # Add semantic FunctionNodes as first-class Cytoscape nodes
+            added_fn_ids = set()
+            for src, dst in cg.edge_list:
+                for node in (src, dst):
+                    if type(node).__name__ == "FunctionNode" and node.name in SEMANTIC_OPS:
+                        fn_id = f"fn_{node.name}_{node.node_id}"
+                        if fn_id not in added_fn_ids:
+                            added_fn_ids.add(fn_id)
+                            parent_path = fn_parents.get(node)
+                            # Ensure parent exists in valid_node_ids
+                            if parent_path and parent_path not in valid_node_ids:
+                                parent_path = None
+
+                            in_s = getattr(node, "input_shape", None)
+                            out_s = getattr(node, "output_shape", None)
+                            symbol = get_op_symbol(node.name)
+
+                            cytoscape_nodes.append({
+                                "data": {
+                                    "id": fn_id,
+                                    "label": f"{symbol} {node.name}",
+                                    "name": node.name,
+                                    "parent": parent_path,
+                                    "class_name": f"Op:{node.name}",
+                                    "category": "op",
+                                    "is_leaf": True,
+                                    "depth": (len(parent_path.split(".")) + 1) if parent_path else 1,
+                                    "in_shape": str(in_s or ""),
+                                    "out_shape": str(out_s or ""),
+                                    "total_params": 0,
+                                }
+                            })
+                            valid_node_ids.add(fn_id)
+
+            # Build adjacency of all raw edges
             adj = defaultdict(list)
             for src, dst in cg.edge_list:
                 adj[src].append(dst)
 
-            def get_mod_id(node: Any) -> Optional[str]:
-                c_id = getattr(node, "compute_unit_id", None)
-                if c_id and c_id in mod_id_to_entry:
-                    return mod_id_to_entry[c_id]["id"]
+            def resolve_node(node: Any) -> Optional[str]:
+                tname = type(node).__name__
+                if tname == "ModuleNode":
+                    c_id = getattr(node, "compute_unit_id", None)
+                    if c_id and c_id in mod_id_to_entry:
+                        return mod_id_to_entry[c_id]["id"]
+                elif tname == "FunctionNode" and node.name in SEMANTIC_OPS:
+                    return f"fn_{node.name}_{node.node_id}"
                 return None
 
             visited_edges = set()
             for src, _ in cg.edge_list:
-                src_id = get_mod_id(src)
+                src_id = resolve_node(src)
                 if not src_id:
                     continue
 
@@ -368,7 +459,7 @@ def inspect_architecture(
                         continue
                     seen.add(curr)
 
-                    dst_id = get_mod_id(curr)
+                    dst_id = resolve_node(curr)
                     if dst_id:
                         if src_id != dst_id and src_id in valid_node_ids and dst_id in valid_node_ids:
                             edge_key = (src_id, dst_id)
@@ -390,9 +481,9 @@ def inspect_architecture(
                                         "shape": shape_lbl,
                                     }
                                 })
-                        # Stop traversing past this module node
+                        # Stop traversing past this recognized node
                     else:
-                        # Continue traversing through non-module nodes (FunctionNode, TensorNode)
+                        # Continue traversing through intermediate auxiliary tensors / hidden functions
                         queue.extend(adj[curr])
 
         except Exception as e:
@@ -502,15 +593,15 @@ HTML_PAGE = """<!DOCTYPE html>
     <div class="flex items-center gap-3">
       <!-- Preset Model Dropdown -->
       <div class="relative">
-        <select id="preset-select" class="bg-surface-900 border border-surface-600 rounded-md px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-500 max-w-[220px]">
+        <select id="preset-select" class="bg-surface-900 border border-surface-600 rounded-md px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-500 max-w-[210px]">
           <option value="">-- Presets (bin/low_mid_vis) --</option>
         </select>
       </div>
 
       <!-- Custom Model Input -->
       <div class="relative">
-        <input id="model-input" type="text" placeholder="timm model (e.g. convnext_tiny.fb_in1k)"
-          class="bg-surface-900 border border-surface-600 rounded-md px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 w-56 focus:outline-none focus:ring-1 focus:ring-brand-500">
+        <input id="model-input" type="text" placeholder="timm model (e.g. vit_base_patch16_clip_224)"
+          class="bg-surface-900 border border-surface-600 rounded-md px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 w-52 focus:outline-none focus:ring-1 focus:ring-brand-500">
       </div>
 
       <!-- Input Shape -->
@@ -522,17 +613,23 @@ HTML_PAGE = """<!DOCTYPE html>
 
       <!-- Direction Toggle -->
       <div class="flex items-center gap-1.5">
-        <span class="text-xs text-slate-400">Direction:</span>
+        <span class="text-xs text-slate-400">Dir:</span>
         <select id="dir-select" class="bg-surface-900 border border-surface-600 rounded-md px-2 py-1.5 text-xs text-slate-200 focus:outline-none">
           <option value="LR" selected>Left &rarr; Right (LR)</option>
           <option value="TB">Top &rarr; Down (TB)</option>
         </select>
       </div>
 
+      <!-- Show Operations Toggle -->
+      <label class="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer bg-surface-900/60 border border-surface-700 px-2.5 py-1.5 rounded-md hover:border-slate-500 transition">
+        <input id="show-ops-toggle" type="checkbox" checked class="accent-brand-500 rounded">
+        <span>Show Ops (add, matmul)</span>
+      </label>
+
       <!-- Depth Slider (UI filtering) -->
       <div class="flex items-center gap-2 bg-surface-900/60 border border-surface-700 rounded-md px-2.5 py-1">
         <span class="text-xs text-slate-400">Depth: <span id="depth-val" class="font-mono text-indigo-400 font-bold">All</span></span>
-        <input id="depth-slider" type="range" min="1" max="6" value="6" class="w-16 accent-indigo-500 cursor-pointer">
+        <input id="depth-slider" type="range" min="1" max="6" value="6" class="w-14 accent-indigo-500 cursor-pointer">
       </div>
 
       <!-- Inspect Button -->
@@ -566,7 +663,7 @@ HTML_PAGE = """<!DOCTYPE html>
     <!-- Search & Regex Highlight -->
     <div class="flex items-center gap-2">
       <div class="relative flex items-center">
-        <input id="filter-input" type="text" placeholder="Highlight layers / regex (e.g. shortcut, dw, conv)..."
+        <input id="filter-input" type="text" placeholder="Highlight layers / ops (e.g. add, matmul, qkv)..."
           class="bg-surface-900 border border-surface-600 rounded-md pl-3 pr-8 py-1 text-xs text-slate-200 w-72 focus:outline-none focus:ring-1 focus:ring-sky-500">
         <span id="filter-count" class="absolute right-2 text-[10px] text-slate-400"></span>
       </div>
@@ -594,8 +691,10 @@ HTML_PAGE = """<!DOCTYPE html>
             <span class="inline-block w-3 h-3 rounded bg-blue-700 border border-blue-400"></span> Conv2d
             <span class="inline-block w-3 h-3 rounded bg-emerald-600 border border-emerald-400"></span> Linear
             <span class="inline-block w-3 h-3 rounded bg-amber-600 border border-amber-400"></span> Norm
-            <span class="inline-block w-3 h-3 rounded bg-purple-600 border border-purple-400"></span> Act / Identity
             <span class="inline-block w-3 h-3 rounded bg-pink-700 border border-pink-400"></span> Attention
+            <span class="inline-block w-3 h-3 rounded-full bg-amber-800 border border-amber-400"></span> + Add
+            <span class="inline-block w-3 h-3 rounded bg-emerald-800 border border-emerald-400"></span> × MatMul / SDPA
+            <span class="inline-block w-3 h-3 rounded bg-purple-800 border border-purple-400"></span> σ Softmax / Split
           </div>
         </div>
       </div>
@@ -660,6 +759,7 @@ HTML_PAGE = """<!DOCTYPE html>
     const modelInput = document.getElementById('model-input');
     const shapeInput = document.getElementById('shape-input');
     const dirSelect = document.getElementById('dir-select');
+    const showOpsToggle = document.getElementById('show-ops-toggle');
     const depthSlider = document.getElementById('depth-slider');
     const depthVal = document.getElementById('depth-val');
     const inspectBtn = document.getElementById('inspect-btn');
@@ -732,6 +832,15 @@ HTML_PAGE = """<!DOCTYPE html>
       }
     });
 
+    // Show Ops Toggle Listener
+    showOpsToggle.addEventListener('change', () => {
+      if (cyInstance) {
+        const show = showOpsToggle.checked;
+        cyInstance.nodes('node[category="op"]').style('display', show ? 'element' : 'none');
+        runDagreLayout();
+      }
+    });
+
     // Tab Switching
     function setView(tab) {
       [tabCyto, tabSvg, tabTree].forEach(t => {
@@ -787,7 +896,7 @@ HTML_PAGE = """<!DOCTYPE html>
       btnSpinner.classList.remove('hidden');
       inspectBtn.disabled = true;
       loadingOverlay.classList.remove('hidden');
-      loadingMsg.textContent = `Loading <${modelName}> and tracing computation graph at full depth...`;
+      loadingMsg.textContent = `Loading <${modelName}> and tracing computation graph with functional operations...`;
 
       try {
         const payload = {
@@ -848,14 +957,14 @@ HTML_PAGE = """<!DOCTYPE html>
       }
     }
 
-    // Run Dagre Layout with generous node separation and rank separation
+    // Run Dagre Layout
     function runDagreLayout() {
       if (!cyInstance) return;
       cyInstance.layout({
         name: 'dagre',
         rankDir: dirSelect.value,
-        nodeSep: 60,
-        rankSep: 90,
+        nodeSep: 50,
+        rankSep: 85,
         padding: 40
       }).run();
     }
@@ -881,8 +990,8 @@ HTML_PAGE = """<!DOCTYPE html>
           layout: {
             name: 'dagre',
             rankDir: dirSelect.value,
-            nodeSep: 60,
-            rankSep: 90,
+            nodeSep: 50,
+            rankSep: 85,
             padding: 40
           },
           style: [
@@ -938,6 +1047,57 @@ HTML_PAGE = """<!DOCTYPE html>
               style: { 'background-color': '#831843', 'border-color': '#ec4899' }
             },
             {
+              selector: 'node[category="op"]',
+              style: {
+                'background-color': '#1e293b',
+                'border-color': '#f59e0b',
+                'border-width': 2,
+                'shape': 'roundrectangle',
+                'color': '#fbbf24',
+                'font-size': '9px',
+                'font-weight': 'bold',
+                'padding': '5px'
+              }
+            },
+            {
+              selector: 'node[name="add"], node[name="add_"]',
+              style: {
+                'background-color': '#78350f',
+                'border-color': '#f59e0b',
+                'shape': 'ellipse',
+                'width': '34px',
+                'height': '34px',
+                'color': '#fde68a'
+              }
+            },
+            {
+              selector: 'node[name="scaled_dot_product_attention"], node[name="matmul"], node[name="bmm"]',
+              style: {
+                'background-color': '#064e3b',
+                'border-color': '#10b981',
+                'shape': 'roundrectangle',
+                'color': '#a7f3d0'
+              }
+            },
+            {
+              selector: 'node[name="softmax"]',
+              style: {
+                'background-color': '#581c87',
+                'border-color': '#a855f7',
+                'shape': 'roundrectangle',
+                'color': '#f3e8ff'
+              }
+            },
+            {
+              selector: 'node[name="cat"], node[name="concat"], node[name="unbind"], node[name="split"]',
+              style: {
+                'background-color': '#1f2937',
+                'border-color': '#9ca3af',
+                'shape': 'roundrectangle',
+                'color': '#e5e7eb'
+              }
+            },
+            {
               selector: 'node.selected',
               style: {
                 'border-color': '#38bdf8',
@@ -950,13 +1110,13 @@ HTML_PAGE = """<!DOCTYPE html>
             {
               selector: 'edge',
               style: {
-                'width': 2,
+                'width': 1.8,
                 'line-color': '#64748b',
                 'target-arrow-color': '#64748b',
                 'target-arrow-shape': 'triangle',
                 'curve-style': 'bezier',
-                'control-point-step-size': 50,
-                'arrow-scale': 0.9,
+                'control-point-step-size': 45,
+                'arrow-scale': 0.85,
                 'label': 'data(shape)',
                 'font-size': '8px',
                 'color': '#94a3b8',
@@ -968,6 +1128,12 @@ HTML_PAGE = """<!DOCTYPE html>
             }
           ]
         });
+
+        // Apply visibility from toggle
+        if (!showOpsToggle.checked) {
+          cyInstance.nodes('node[category="op"]').style('display', 'none');
+          runDagreLayout();
+        }
 
         cyInstance.on('tap', 'node', (e) => {
           const node = e.target;
@@ -1086,14 +1252,22 @@ HTML_PAGE = """<!DOCTYPE html>
       });
     }
 
-    // Select & Inspect Module
+    // Select & Inspect Module or Operation
     function selectModule(moduleId) {
       if (!currentData) return;
       selectedModuleId = moduleId;
-      const item = currentData.hierarchy.find(m => m.id === moduleId);
-      if (!item) return;
 
-      selectedTypeBadge.textContent = item.class_name;
+      // Check if it's a module
+      const item = currentData.hierarchy.find(m => m.id === moduleId);
+      
+      // Check if it's a function op
+      const opNode = (!item && currentData.cytoscape) ? currentData.cytoscape.nodes.find(n => n.data.id === moduleId) : null;
+
+      if (!item && !opNode) return;
+
+      const title = item ? item.id : opNode.data.id;
+      const cname = item ? item.class_name : opNode.data.class_name;
+      selectedTypeBadge.textContent = cname;
 
       if (cyInstance) {
         try {
@@ -1113,12 +1287,44 @@ HTML_PAGE = """<!DOCTYPE html>
       const allSvgNodes = container.querySelectorAll('.node, .cluster');
       allSvgNodes.forEach(n => n.classList.remove('node-highlight'));
       allSvgNodes.forEach(n => {
-        const title = n.querySelector('title');
-        if (title && (title.textContent.trim() === moduleId || title.textContent.trim() === item.name)) {
+        const t = n.querySelector('title');
+        if (t && (t.textContent.trim() === moduleId || (item && t.textContent.trim() === item.name))) {
           n.classList.add('node-highlight');
         }
       });
 
+      if (opNode && !item) {
+        // Operation node inspection
+        inspectorContent.innerHTML = `
+          <div class="space-y-1">
+            <div class="text-[11px] text-amber-400 uppercase font-semibold">Functional Tensor Operation</div>
+            <div class="font-mono text-sm font-bold text-slate-100">${opNode.data.name}</div>
+          </div>
+          <div class="bg-surface-900/60 p-2.5 rounded border border-surface-700 space-y-1.5 text-[11px]">
+            <div class="flex justify-between">
+              <span class="text-slate-400">Operation Type:</span>
+              <span class="font-mono font-bold text-amber-400">${opNode.data.name}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-400">Parent Module:</span>
+              <span class="font-mono text-indigo-400">${opNode.data.parent || 'Root'}</span>
+            </div>
+          </div>
+          <div class="space-y-1">
+            <div class="text-[11px] text-slate-400 uppercase font-semibold">Tensor Dimensions</div>
+            <div class="bg-surface-900/60 p-2.5 rounded border border-surface-700 font-mono text-[11px] space-y-1">
+              <div><span class="text-emerald-400 font-bold">Input:</span> <span class="text-slate-200">${opNode.data.in_shape || 'N/A'}</span></div>
+              <div><span class="text-sky-400 font-bold">Output:</span> <span class="text-slate-200">${opNode.data.out_shape || 'N/A'}</span></div>
+            </div>
+          </div>
+          <p class="text-[10px] text-slate-400 bg-surface-900/40 p-2 rounded border border-surface-700">
+            This node represents a stream convergence/divergence point (e.g. residual addition, attention matrix multiplication, or softmax).
+          </p>
+        `;
+        return;
+      }
+
+      // Module node inspection
       const inStr = item.input_shape ? JSON.stringify(item.input_shape, null, 2) : 'N/A';
       const outStr = item.output_shape ? JSON.stringify(item.output_shape, null, 2) : 'N/A';
 
@@ -1423,7 +1629,7 @@ def main():
         "--model",
         type=str,
         default=None,
-        help="Model architecture name to open directly (e.g. convnext_tiny.fb_in1k)",
+        help="Model architecture name to open directly (e.g. vit_base_patch16_clip_224.openai_ft_in12k_in1k)",
     )
     parser.add_argument(
         "--port",
