@@ -19,8 +19,15 @@ def setup_logging(module_name):
 
 def init_model(model_name, pretrained=True, verbose=False):
     model = timm.create_model(model_name, pretrained=pretrained, cache_dir="data/models/")
+
+    # Disable inplace modification so recording for pre-activations returns the correct tensors.
+    for m in model.modules():
+        if isinstance(m, torch.nn.ReLU):
+            m.inplace = False
+
     if verbose:
         print(model)
+
     return model.to(get_device())
 
 
