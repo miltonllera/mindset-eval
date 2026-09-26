@@ -1259,7 +1259,7 @@ HTML_PAGE = """<!DOCTYPE html>
 
       // Check if it's a module
       const item = currentData.hierarchy.find(m => m.id === moduleId);
-      
+
       // Check if it's a function op
       const opNode = (!item && currentData.cytoscape) ? currentData.cytoscape.nodes.find(n => n.data.id === moduleId) : null;
 

@@ -91,20 +91,18 @@ def record_from_model(
             bsz = len(batch['SampleID'])
             batch_layer_acts = {}
             for img_type in IMAGE_TYPES:
-                images = batch[f'{img_type}Path'].to(device)
+                images = batch[f'{img_type}Image'].to(device)
                 net(images)
                 batch_layer_acts[img_type] = {k: v.cpu() for k, v in recorder.activation.items()}
 
             layer_names = list(recorder.activation.keys())
             sample_ids = [int(x) for x in batch['SampleID']]
-            shape_types = list(batch['ShapeType'])
 
             for ref_type, comp_type in COMPARISONS:
                 ref_acts = batch_layer_acts[ref_type]
                 comp_acts = batch_layer_acts[comp_type]
                 chunk_dict = {
                     'SampleID': sample_ids,
-                    'ShapeType': shape_types,
                     'Comparison': [f'{ref_type}_vs_{comp_type}'] * bsz,
                 }
                 for k in layer_names:

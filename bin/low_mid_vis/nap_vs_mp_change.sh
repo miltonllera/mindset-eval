@@ -8,10 +8,8 @@
 
 
 MODELS=(
-  "resnet50s.gluon_in1k"
-  "resnext101_32x8d.fb_swsl_ig1b_ft_in1k resnext101_32x4d.fb_swsl_ig1b_ft_in1k"
-  "convnext_tiny.fb_in1k"
-  "convnext_base.clip_laion2b_augreg_ft_in1k convnext_large_mlp.clip_laion2b_augreg_ft_in1k_384 convnext_xlarge.fb_in22k_ft_in1k"
+  "resnet50s.gluon_in1k resnext101_32x8d.fb_swsl_ig1b_ft_in1k resnext101_32x4d.fb_swsl_ig1b_ft_in1k"
+  "convnext_tiny.fb_in1k convnext_base.clip_laion2b_augreg_ft_in1k convnext_large_mlp.clip_laion2b_augreg_ft_in1k_384 convnext_xlarge.fb_in22k_ft_in1k"
   "vit_base_patch16_clip_224.openai_ft_in12k_in1k vit_large_patch14_clip_224.laion2b_ft_in12k_in1k vit_large_patch14_clip_224.openai_ft_in12k_in1k"
   "deit3_base_patch16_224.fb_in1k deit3_medium_patch16_224.fb_in1k deit3_large_patch16_224.fb_in22k_ft_in1k"
   "focalnet_base_lrf.ms_in1k focalnet_base_srf.ms_in1k"
@@ -19,9 +17,7 @@ MODELS=(
 )
 
 RECORD_FROM=(
-  "^act1:in ^layer[1-4]\.[0-5]\.act3:in ^fc:in"
   "^act1:in ^layer[1-4]\.([0-9]|[1-2][0-9])\.act3:in ^fc:in"
-  "^stem\.1 ^stages\.[0-3]\.blocks\.[0-9]:in"
   "^stem\.1 ^stages\.[0-3]\.blocks\.([0-9]|[1-2][0-9]):in"
   "^blocks\.([0-9]|[1-9][0-9]):out"
   "^blocks\.([0-9]|[1-9][0-9]):out"
@@ -41,9 +37,7 @@ done
 
 
 RECORD_FROM=(
-  "^layer[1-4]\.[0-5]\.bn3"
   "^layer[1-4]\.([0-9]|[1-2][0-9])\.bn3"
-  "^stages\.[0-3]\.blocks\.[0-9].drop_path"
   "^stages\.[0-3]\.blocks\.([0-9]|[1-2][0-9]).drop_path"
   "^blocks\.([0-9]|[1-9][0-9])\.drop_path2"
   "^blocks\.([0-9]|[1-9][0-9])\.drop_path2"
