@@ -16,6 +16,7 @@ from src.utils import (
     init_model,
     get_recording_files,
     plot_layer_scores,
+    plot_refval_vs_similarity_diff,
     setup_logging
 )
 
@@ -23,7 +24,9 @@ from src.utils import (
 _logger = setup_logging(__name__)
 
 
-TEST_COLUMNS = ['SampleID', 'Dimension', 'ReferencePath', 'MPPath', 'NAPPath', 'Shape']
+TEST_COLUMNS = [
+    'SampleID', 'Dimension', 'RefVal', 'MPVal', 'NAPVal', 'ReferencePath', 'MPPath', 'NAPPath', 'Shape'
+]
 IMAGE_TYPES  = ['Reference', 'MP', 'NAP']
 COMPARISONS  = [('Reference', 'MP'), ('Reference', 'NAP')]
 
@@ -100,6 +103,10 @@ def record_from_model(
             layer_names = list(recorder.activation.keys())
             sample_ids = [int(x) for x in batch['SampleID']]
             shape_types = list(batch['Shape'])
+            dimension = list(batch['Dimension'])
+            ref_val = list(batch['RefVal'])
+            mp_val = list(batch['MPVal'])
+            nap_val = list(batch['NAPVal'])
 
             for ref_type, comp_type in COMPARISONS:
                 ref_acts = batch_layer_acts[ref_type]
@@ -108,6 +115,10 @@ def record_from_model(
                     'SampleID': sample_ids,
                     'Shape': shape_types,
                     'Comparison': [f'{ref_type}_vs_{comp_type}'] * bsz,
+                    'Dimension': dimension,
+                    'RefVal': ref_val,
+                    'MPVal': mp_val,
+                    'NAPVal': nap_val,
                 }
                 for k in layer_names:
                     chunk_dict[k] = calc_dist(ref_acts[k], comp_acts[k], bsz)
@@ -137,7 +148,16 @@ def record_from_model(
         ddf = dd.read_parquet(recordings_file_path)
 
     plot_filename = f"{metric}_vs_layer{tag_suffix}.png"
-    plot_layer_scores(ddf, metric, results_folder, layer_names=layer_names, filename=plot_filename)
+    plot_layer_scores(
+        ddf, metric, results_folder, layer_names=layer_names, filename=plot_filename
+    )
+
+    diff_plot_filename = f"{metric}_refval_diff{tag_suffix}.png"
+    plot_refval_vs_similarity_diff(
+        ddf, metric, results_folder, layer_names=layer_names, filename=diff_plot_filename
+    )
+
+
 
     _logger.info(f"Recording finished. Saved to: <{recordings_file_path}>")
     return recordings_file_path

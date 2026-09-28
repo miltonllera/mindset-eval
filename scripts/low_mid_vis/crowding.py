@@ -133,7 +133,7 @@ def record_from_model(
         metric="Accuracy",
         results_folder=results_folder,
         layer_names=layer_names,
-        group_col="Pattern Length",
+        condition_col="Pattern Length",
         filename=plot_filename,
     )
 
