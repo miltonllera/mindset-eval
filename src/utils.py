@@ -212,274 +212,102 @@ def plot_refval_vs_similarity_diff(
     max_cols: int = 8,
 ) -> Path:
     """
-    Plots the similarity difference Sim(Ref, MP) - Sim(Ref, NAP) as a function of RefVal
-    for each layer across a grid of subplots (up to max_cols panels per row),
-    grouped by Dimension with distinct colors, and with consistent x- and y-axis scales.
-
-    Parameters:
-        df: DataFrame (Dask, Polars, or Pandas) containing evaluation records.
-        metric: Metric name (e.g. 'cossim').
-        results_folder: Destination folder for the output plot.
-        layer_names: Optional list of layer names to plot. If None, inferred automatically.
-        filename: Optional filename for the output plot.
-        max_cols: Maximum number of panels per row (defaults to 8).
+    Plots the similarity difference Sim(Ref, MP) - Sim(Ref, NAP) as a function of |RefVal|
+    with one panel per Dimension and layers displayed along a dark-to-light gradient
+    (where deeper layers are lighter). Y-axis scale is constant across panels, while
+    each dimension has its own x-axis scale.
     """
     results_folder = Path(results_folder)
     results_folder.mkdir(parents=True, exist_ok=True)
 
-    if hasattr(df, "compute"):
-        pdf = df.compute()
-    elif isinstance(df, pl.DataFrame):
-        pdf = df.to_pandas()
-    else:
-        pdf = df.copy()
-
+    pdf = df.compute() if hasattr(df, "compute") else (df.to_pandas() if isinstance(df, pl.DataFrame) else df.copy())
     if layer_names is None:
-        exclude_cols = {
-            "Comparison",
-            "SampleID",
-            "ManipulatedShape",
-            "ShapeType",
-            "Shape",
-            "Dimension",
-            "RefVal",
-            "MPVal",
-            "NAPVal",
-            "ReferencePath",
-            "MPPath",
-            "NAPPath",
-            "Target",
-        }
-        layer_names = [c for c in pdf.columns if c not in exclude_cols]
+        exclude = {"Comparison", "SampleID", "ManipulatedShape", "ShapeType", "Shape", "Dimension", "RefVal", "MPVal", "NAPVal", "ReferencePath", "MPPath", "NAPPath", "Target"}
+        layer_names = [c for c in pdf.columns if c not in exclude]
 
-    if not layer_names:
-        raise ValueError("No layer names found to plot.")
-
-    # Identify MP and NAP rows
-    mp_mask = pdf["Comparison"].astype(str).str.endswith("_vs_MP") | (
-        pdf["Comparison"] == "Reference_vs_MP"
-    )
-    nap_mask = pdf["Comparison"].astype(str).str.endswith("_vs_NAP") | (
-        pdf["Comparison"] == "Reference_vs_NAP"
+    # Align comparison conditions and compute difference
+    mp = pdf[pdf["Comparison"].astype(str).str.contains("MP", case=False)].set_index("SampleID")
+    nap = pdf[pdf["Comparison"].astype(str).str.contains("NAP", case=False)].set_index("SampleID")
+    common_ids = mp.index.intersection(nap.index)
+    diff = (mp.loc[common_ids, layer_names].astype(float) - nap.loc[common_ids, layer_names].astype(float)).assign(
+        RefVal=pd.to_numeric(mp.loc[common_ids, "RefVal"], errors="coerce").abs(),
+        Dimension=mp.loc[common_ids, "Dimension"].astype(str) if "Dimension" in mp.columns else "Default",
     )
 
-    if not mp_mask.any() or not nap_mask.any():
-        mp_mask = pdf["Comparison"].astype(str).str.contains("MP", case=False)
-        nap_mask = pdf["Comparison"].astype(str).str.contains("NAP", case=False)
+    unique_dims, n_layers = list(diff["Dimension"].unique()), len(layer_names)
+    start_rgb, end_rgb = (8, 48, 107), (142, 199, 232)
+    colors = [
+        f"rgb({int(start_rgb[0] + t * (end_rgb[0] - start_rgb[0]))},"
+        f"{int(start_rgb[1] + t * (end_rgb[1] - start_rgb[1]))},"
+        f"{int(start_rgb[2] + t * (end_rgb[2] - start_rgb[2]))})"
+        for t in [i / max(1, n_layers - 1) for i in range(n_layers)]
+    ]
+    tick_idx = list(range(n_layers)) if n_layers <= 8 else sorted(set(np.linspace(0, n_layers - 1, 7, dtype=int)))
 
-    mp_rows = pdf[mp_mask]
-    nap_rows = pdf[nap_mask]
+    # Global y-range across all layers for constant comparison
+    y_min, y_max = min(0.0, float(diff[layer_names].min().min())), max(0.0, float(diff[layer_names].max().max()))
+    y_pad = 0.05 * (y_max - y_min) if y_max > y_min else 0.1
 
-    if mp_rows.empty or nap_rows.empty:
-        raise ValueError("Could not find both MP and NAP comparison conditions in data.")
+    ncols = min(max_cols, len(unique_dims))
+    nrows = math.ceil(len(unique_dims) / ncols)
+    fig = make_subplots(rows=nrows, cols=ncols, subplot_titles=[str(d) for d in unique_dims],
+                        horizontal_spacing=max(0.04, 0.25 / ncols), vertical_spacing=max(0.06, 0.4 / nrows))
 
-    if "SampleID" in pdf.columns:
-        mp_aligned = mp_rows.set_index("SampleID")
-        nap_aligned = nap_rows.set_index("SampleID")
-        common_ids = mp_aligned.index.intersection(nap_aligned.index)
-        mp_aligned = mp_aligned.loc[common_ids]
-        nap_aligned = nap_aligned.loc[common_ids]
-    else:
-        mp_aligned = mp_rows.reset_index(drop=True)
-        nap_aligned = nap_rows.reset_index(drop=True)
+    # Colorbar on side
+    fig.add_trace(go.Scatter(
+        x=[None], y=[None], mode="markers", showlegend=False, hoverinfo="none",
+        marker=dict(
+            colorscale=[[0.0, f"rgb{start_rgb}"], [1.0, f"rgb{end_rgb}"]],
+            cmin=0, cmax=max(1, n_layers - 1), color=[0, max(1, n_layers - 1)], showscale=True,
+            colorbar=dict(title=dict(text="Layer Depth<br>(Early → Deep)", font=dict(size=11)),
+                          tickmode="array", tickvals=tick_idx, ticktext=[layer_names[i] for i in tick_idx],
+                          tickfont=dict(size=9), len=0.85, y=0.5, yanchor="middle"),
+        ),
+    ), row=1, col=1)
 
-    # Compute difference: Sim(Ref, MP) - Sim(Ref, NAP)
-    diff_df = pd.DataFrame(index=mp_aligned.index)
-    diff_df["RefVal"] = pd.to_numeric(mp_aligned["RefVal"], errors="coerce")
-    if "Dimension" in mp_aligned.columns:
-        diff_df["Dimension"] = mp_aligned["Dimension"].astype(str).values
-    else:
-        diff_df["Dimension"] = "Default"
+    for i, dim in enumerate(unique_dims):
+        r, c = (i // ncols) + 1, (i % ncols) + 1
+        dim_df = diff[diff["Dimension"] == dim]
+        agg = dim_df.groupby("RefVal")[layer_names].agg(["mean", "std"]).sort_index()
+        xs = agg.index.tolist()
+        if not xs:
+            continue
 
-    for l in layer_names:
-        diff_df[l] = (
-            pd.to_numeric(mp_aligned[l], errors="coerce")
-            - pd.to_numeric(nap_aligned[l], errors="coerce")
-        )
+        x_pad = 0.05 * (max(xs) - min(xs)) if max(xs) > min(xs) else 0.5
+        x_range = [max(0.0, min(xs) - x_pad), max(xs) + x_pad]
 
-    # Dimensions and color mapping
-    unique_dims = list(diff_df["Dimension"].unique())
-    colors = px.colors.qualitative.Plotly
-    dim_colors = {
-        dim: colors[idx % len(colors)] for idx, dim in enumerate(unique_dims)
-    }
+        # Zero reference line
+        fig.add_trace(go.Scatter(x=x_range, y=[0, 0], mode="lines",
+                                 line=dict(color="rgba(128,128,128,0.6)", width=1, dash="dash"),
+                                 showlegend=False, hoverinfo="skip"), row=r, col=c)
 
-    # Global axis limits across all panels for constant scale
-    valid_refvals = diff_df["RefVal"].dropna()
-    if not valid_refvals.empty:
-        global_x_min = valid_refvals.min()
-        global_x_max = valid_refvals.max()
-        x_span = global_x_max - global_x_min
-        x_pad = 0.05 * x_span if x_span > 0 else 0.5
-        x_range = [global_x_min - x_pad, global_x_max + x_pad]
-    else:
-        x_range = None
-
-    all_y_min = 0.0
-    all_y_max = 0.0
-    has_layer_data = False
-    for l in layer_names:
-        col_vals = diff_df[l].dropna()
-        if not col_vals.empty:
-            has_layer_data = True
-            all_y_min = min(all_y_min, float(col_vals.min()))
-            all_y_max = max(all_y_max, float(col_vals.max()))
-
-    if has_layer_data:
-        y_span = all_y_max - all_y_min
-        y_pad = 0.05 * y_span if y_span > 0 else 0.1
-        y_range = [all_y_min - y_pad, all_y_max + y_pad]
-    else:
-        y_range = None
-
-    n_layers = len(layer_names)
-    ncols = min(max_cols, n_layers)
-    nrows = math.ceil(n_layers / ncols)
-
-    fig = make_subplots(
-        rows=nrows,
-        cols=ncols,
-        subplot_titles=layer_names,
-        horizontal_spacing=max(0.02, 0.2 / ncols),
-        vertical_spacing=max(0.04, 0.4 / nrows),
-    )
-
-    for i, layer in enumerate(layer_names):
-        row = (i // ncols) + 1
-        col = (i % ncols) + 1
-
-        # Zero reference line across panel width
-        line_x = x_range if x_range is not None else [0, 1]
-        fig.add_trace(
-            go.Scatter(
-                x=line_x,
-                y=[0, 0],
-                mode="lines",
-                line=dict(color="rgba(128, 128, 128, 0.6)", width=1, dash="dash"),
-                showlegend=False,
-                hoverinfo="skip",
-            ),
-            row=row,
-            col=col,
-        )
-
-        for dim in unique_dims:
-            dim_data = diff_df[diff_df["Dimension"] == dim]
-            agg = (
-                dim_data.groupby("RefVal")[layer]
-                .agg(["mean", "std", "count"])
-                .reset_index()
-                .sort_values("RefVal")
-            )
-            ref_vals = agg["RefVal"].tolist()
-            means = agg["mean"].tolist()
-            stds = agg["std"].tolist()
-
-            if not ref_vals:
-                continue
-
-            color = dim_colors[dim]
-            fillcolor = _color_to_rgba(color, 0.2)
-
-            # Shaded error band if multiple samples exist per RefVal
-            has_valid_std = any(pd.notna(s) and s > 0 for s in stds)
-            if has_valid_std:
+        for l_idx, layer in enumerate(layer_names):
+            means, stds = agg[(layer, "mean")].tolist(), agg[(layer, "std")].tolist()
+            color = colors[l_idx]
+            if any(pd.notna(s) and s > 0 for s in stds):
                 upper = [(m + s) if pd.notna(s) else m for m, s in zip(means, stds)]
                 lower = [(m - s) if pd.notna(s) else m for m, s in zip(means, stds)]
-                fig.add_trace(
-                    go.Scatter(
-                        x=ref_vals + ref_vals[::-1],
-                        y=upper + lower[::-1],
-                        fill="toself",
-                        fillcolor=fillcolor,
-                        line=dict(color="rgba(255,255,255,0)"),
-                        hoverinfo="skip",
-                        showlegend=False,
-                        legendgroup=str(dim),
-                    ),
-                    row=row,
-                    col=col,
-                )
+                fig.add_trace(go.Scatter(x=xs + xs[::-1], y=upper + lower[::-1], fill="toself",
+                                         fillcolor=_color_to_rgba(color, 0.15), line=dict(color="rgba(255,255,255,0)"),
+                                         hoverinfo="skip", showlegend=False), row=r, col=c)
+            fig.add_trace(go.Scatter(x=xs, y=means, mode="lines+markers", line=dict(color=color, width=2),
+                                     marker=dict(size=4), name=str(layer), showlegend=False,
+                                     hovertemplate=f"Dimension: {dim}<br>Layer: {layer} (depth {l_idx})<br>|RefVal|: %{{x}}<br>ΔSim: %{{y:.4f}}<extra></extra>"),
+                          row=r, col=c)
 
-            # Mean curve with markers
-            fig.add_trace(
-                go.Scatter(
-                    x=ref_vals,
-                    y=means,
-                    mode="lines+markers",
-                    line=dict(color=color, width=2),
-                    marker=dict(size=4),
-                    name=str(dim),
-                    showlegend=(i == 0),
-                    legendgroup=str(dim),
-                    hovertemplate=(
-                        f"Layer: {layer}<br>"
-                        f"Dimension: {dim}<br>"
-                        "RefVal: %{x}<br>"
-                        "ΔSim: %{y:.4f}<extra></extra>"
-                    ),
-                ),
-                row=row,
-                col=col,
-            )
+        fig.update_xaxes(range=x_range, title_text="|RefVal|", title_font=dict(size=10), showline=True, linewidth=1, linecolor="black", mirror=True, tickfont=dict(size=9), row=r, col=c)
+        if c == 1:
+            fig.update_yaxes(title_text="ΔSim (MP - NAP)", title_font=dict(size=10), row=r, col=c)
 
-        # Axis styling for individual panels
-        is_bottom = (row == nrows) or ((i + ncols) >= n_layers)
-        if is_bottom:
-            fig.update_xaxes(title_text="RefVal", title_font=dict(size=10), row=row, col=col)
-        if col == 1:
-            fig.update_yaxes(
-                title_text="ΔSim (MP - NAP)", title_font=dict(size=10), row=row, col=col
-            )
-
+    fig.update_yaxes(range=[y_min - y_pad, y_max + y_pad], showline=True, linewidth=1, linecolor="black", mirror=True, tickfont=dict(size=9))
     fig.update_layout(
-        template="plotly_white",
-        width=max(1200, ncols * 220),
-        height=max(340, nrows * 250),
-        title=dict(
-            text=f"Similarity Difference [Sim(Ref, MP) - Sim(Ref, NAP)] vs RefVal ({metric})",
-            x=0.5,
-            xanchor="center",
-            font=dict(size=14),
-        ),
-        legend=dict(
-            title_text="Dimension",
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="center",
-            x=0.5,
-            font=dict(size=11),
-        ),
-        margin=dict(l=60, r=40, t=90, b=50),
+        template="plotly_white", width=max(800, ncols * 280 + 120), height=max(360, nrows * 280),
+        title=dict(text=f"Similarity Difference [Sim(Ref, MP) - Sim(Ref, NAP)] vs |RefVal| by Dimension ({metric})", x=0.5, xanchor="center", font=dict(size=14)),
+        margin=dict(l=60, r=120, t=70, b=50),
     )
+    fig.for_each_annotation(lambda a: a.update(font=dict(size=11)))
 
-    fig.for_each_annotation(lambda a: a.update(font=dict(size=10)))
-
-    # Set consistent axis scales across all subplots
-    if x_range is not None:
-        fig.update_xaxes(range=x_range)
-    if y_range is not None:
-        fig.update_yaxes(range=y_range)
-
-    fig.update_xaxes(
-        showline=True,
-        linewidth=1,
-        linecolor="black",
-        mirror=True,
-        tickfont=dict(size=9),
-    )
-    fig.update_yaxes(
-        showline=True,
-        linewidth=1,
-        linecolor="black",
-        mirror=True,
-        tickfont=dict(size=9),
-    )
-
-    out_file = results_folder / (
-        filename if filename is not None else f"{metric}_diff_vs_refval.png"
-    )
+    out_file = results_folder / (filename if filename is not None else f"{metric}_diff_vs_refval.png")
     fig.write_image(out_file)
     return out_file
 
