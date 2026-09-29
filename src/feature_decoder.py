@@ -1,4 +1,3 @@
-import re
 import logging
 from typing import Callable, Literal
 import torch
@@ -117,7 +116,7 @@ class FeatureDecoder(pl.LightningModule):
         parameters = [p for p in self._decoders.parameters()]
         if self.finetune_model:
             parameters = [p for p in self.net.parameters()]
-        return torch.optim.Adam(parameters, lr=1e-3)
+        return torch.optim.AdamW(parameters, lr=1e-4, weight_decay=0.1)
 
     def _format_input(self, target):
         if len(target.shape) == 1:

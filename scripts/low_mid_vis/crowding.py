@@ -6,7 +6,7 @@ import torch
 import pandas as pd
 import dask.dataframe as dd
 from lightning.pytorch import Trainer
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 
 from src.dataset import AnnotatedDataset
@@ -142,10 +142,11 @@ def record_from_model(
 
 
 def train_feature_extractor(feature_decoder, dataset):
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=12)
-    val_dataloader = DataLoader(dataset, batch_size=64, shuffle=False, num_workers=12)
+    train_data, val_data = random_split(dataset, [0.8, 0.2])
+    dataloader = DataLoader(train_data, batch_size=64, shuffle=True, num_workers=0, drop_last=True)
+    val_dataloader = DataLoader(val_data, batch_size=64, shuffle=False, num_workers=0)
     trainer = Trainer(
-        max_epochs=-1, max_steps=500, val_check_interval=100, check_val_every_n_epoch=None
+        max_epochs=-1, max_steps=1000, val_check_interval=100, check_val_every_n_epoch=None
     )
     trainer.fit(feature_decoder, train_dataloaders=dataloader, val_dataloaders=val_dataloader)
     return feature_decoder
@@ -203,7 +204,7 @@ def main(
 ):
     _logger.info("Loading models...")
 
-    results_folder = Path(results_folder) / 'un_crowding'
+    results_folder = Path(results_folder) / 'uncrowding'
 
     if not results_folder.exists() or overwrite_recordings:
         results_folder.mkdir(parents=True, exist_ok=True)
