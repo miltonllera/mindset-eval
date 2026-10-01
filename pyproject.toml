@@ -41,6 +41,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "matplotlib>=3.11",
     "torchview>=0.2.7",
+    "black>=26.5.1",
 ]
 
 [tool.uv.sources]

@@ -1,5 +1,6 @@
 import argparse
 import shutil
+from math import prod
 from pathlib import Path
 
 import torch
@@ -17,6 +18,7 @@ from src.utils import (
     init_model,
     get_recording_files,
     plot_layer_scores,
+    plot_uncrowding_grid_arrangements,
     setup_logging
 )
 
@@ -88,6 +90,10 @@ def record_from_model(
                 'GridPattern': grid_patterns,
                 'Target': targets_list,
             }
+            for extra_col in ('GridArrangement', 'NumRows', 'NumCols'):
+                if extra_col in batch:
+                    chunk_dict[extra_col] = list(batch[extra_col])
+
             for k, v in preds.items():
                 pred_tensor = v.squeeze(-1) if v.ndim > 1 else v
                 chunk_dict[k] = (pred_tensor.sigmoid() > 0.5).to(dtype=torch.int).cpu().tolist()
@@ -117,25 +123,35 @@ def record_from_model(
 
     layer_names = [
         c for c in ddf.columns if c not in
-        ('SampleID', 'VernierOffset', 'GridPattern', 'Target', 'Pattern Length')
+        ('SampleID', 'VernierOffset', 'GridPattern', 'GridArrangement', 'NumRows', 'NumCols', 'Target', 'Pattern Length')
+        and not str(c).startswith('__')
     ]
     for layer in layer_names:
         ddf[layer] = (ddf[layer] == ddf['Target']).astype(float)
 
     ddf['Pattern Length'] = ddf['GridPattern'].map(
-        lambda x: f"Pattern Length {len(x.split(','))}",
-        meta=('GridPattern', 'object')
+        lambda x: prod(map(int, x.split(':')[0].split('x'))),
+        meta=('GridPattern', 'int64')
     )
 
     plot_filename = f"accuracy_vs_layer{tag_suffix}.png"
-    plot_layer_scores(
-        ddf,
-        metric="Accuracy",
-        results_folder=results_folder,
-        layer_names=layer_names,
-        condition_col="Pattern Length",
-        filename=plot_filename,
-    )
+    if 'GridArrangement' in ddf.columns:
+        plot_uncrowding_grid_arrangements(
+            ddf,
+            results_folder=results_folder,
+            layer_names=layer_names,
+            metric="Accuracy",
+            filename=plot_filename,
+        )
+    else:
+        plot_layer_scores(
+            ddf,
+            metric="Accuracy",
+            results_folder=results_folder,
+            layer_names=layer_names,
+            condition_col="Pattern Length",
+            filename=plot_filename,
+        )
 
     _logger.info(f"Recording finished. Saved to: <{recordings_file_path}>")
     return recordings_file_path
@@ -167,9 +183,15 @@ def record_all(annotations_file, model_names, record_from, results_folder, outpu
             )
             continue
 
+        available_cols = pl.read_csv(annotations_file, n_rows=1).columns
+        test_columns = [
+            c for c in ['Path', 'VernierType', 'VernierOffset', 'GridPattern', 'GridArrangement', 'NumRows', 'NumCols', 'ShapeSize']
+            if c in available_cols
+        ]
+
         train_dataset = AnnotatedDataset(
             annotations_file,
-            test_columns=TEST_COLUMNS,
+            test_columns=test_columns,
             transform=model_transform(model),
             filter_expr="pl.col('VernierInOut') == 'outside'",
         )
@@ -177,7 +199,7 @@ def record_all(annotations_file, model_names, record_from, results_folder, outpu
 
         test_dataset = AnnotatedDataset(
             annotations_file,
-            test_columns=TEST_COLUMNS,
+            test_columns=test_columns,
             transform=model_transform(model),
             filter_expr="pl.col('VernierInOut') == 'inside'",
         )
