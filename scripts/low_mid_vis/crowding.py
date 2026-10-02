@@ -5,7 +5,7 @@ from pathlib import Path
 
 import torch
 import polars as pl
-import dask.dataframe as dd
+import pyarrow.parquet as pq
 from lightning.pytorch import Trainer
 from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
@@ -27,8 +27,8 @@ torch.set_float32_matmul_precision('high')
 _logger = setup_logging(__name__)
 
 TEST_COLUMNS = [
-    'Path', 'VernierType', 'VernierOffset', 'GridPattern', 'NumRows', 'NumCols',
-    'CenterShape', 'AlternateShape', 'Loc', 'Scale'
+    'Path', 'VernierType', 'VernierOffset', 'GridPattern', 'GridArrangement',
+    'NumRows', 'NumCols', 'ShapeSize', 'CenterShape', 'AlternateShape', 'Loc', 'Scale'
 ]
 TARGET_COLUMN = 'VernierType'
 
@@ -57,19 +57,17 @@ def record_from_model(
             recordings_file_path.unlink()
 
     buffer_chunks = []
+    writer = None
 
     def _flush_buffer():
-        nonlocal buffer_chunks
+        nonlocal buffer_chunks, writer
         if buffer_chunks:
             flush_df = pl.concat(buffer_chunks)
-            dd.from_pandas(flush_df, npartitions=1).to_parquet(
-                recordings_file_path,
-                engine="pyarrow",
-                append=True,
-                ignore_divisions=True,
-            )
+            table = flush_df.to_arrow()
+            if writer is None:
+                writer = pq.ParquetWriter(recordings_file_path, table.schema)
+            writer.write_table(table)
             buffer_chunks.clear()
-            del flush_df
 
     feature_extractor = feature_extractor.eval().to(device=device)
     sample_counter = 0
@@ -102,33 +100,30 @@ def record_from_model(
 
         _flush_buffer()
 
-    # Consolidate partitions to eliminate fragmentation
-    ddf = dd.read_parquet(recordings_file_path)
-    if ddf.npartitions > 1:
-        temp_consolidated_path = results_folder / f"predictions{tag_suffix}_consolidated.parquet"
-        ddf.repartition(npartitions=1).to_parquet(
-            temp_consolidated_path,
-            engine="pyarrow",
-        )
-        shutil.rmtree(recordings_file_path)
-        temp_consolidated_path.rename(recordings_file_path)
-        ddf = dd.read_parquet(recordings_file_path)
+    if writer is not None:
+        writer.close()
 
+    df = pl.read_parquet(recordings_file_path)
+
+    exclude = set(TEST_COLUMNS) | {'SampleID', 'Target', 'Pattern Length', '__null_dask_index__'}
     layer_names = [
-        c for c in ddf.columns if c not in TEST_COLUMNS and not str(c).startswith('__')
+        c for c in df.columns if c not in exclude and not str(c).startswith('__')
     ]
-    for layer in layer_names:
-        ddf[layer] = (ddf[layer] == ddf['Target']).astype(float)
+    accuracy_exprs = [(pl.col(c) == pl.col('Target')).cast(pl.Float64).alias(c) for c in layer_names]
+    df = df.with_columns(accuracy_exprs)
 
-    ddf['Pattern Length'] = ddf['GridPattern'].map(
-        lambda x: prod(map(int, x.split(':')[0].split('x'))),
-        meta=('GridPattern', 'int64')
-    )
+    if 'GridPattern' in df.columns:
+        df = df.with_columns(
+            pl.col('GridPattern').map_elements(
+                lambda x: prod(map(int, str(x).split(':')[0].split('x'))),
+                return_dtype=pl.Int64
+            ).alias('Pattern Length')
+        )
 
     plot_filename = f"accuracy_vs_layer{tag_suffix}.png"
-    if 'GridArrangement' in ddf.columns:
+    if 'GridArrangement' in df.columns:
         plot_uncrowding_grid_arrangements(
-            ddf,
+            df,
             results_folder=results_folder,
             layer_names=layer_names,
             metric="Accuracy",
@@ -136,7 +131,7 @@ def record_from_model(
         )
     else:
         plot_layer_scores(
-            ddf,
+            df,
             metric="Accuracy",
             results_folder=results_folder,
             layer_names=layer_names,

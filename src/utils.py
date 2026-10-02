@@ -224,17 +224,18 @@ def plot_uncrowding_grid_arrangements(
 ) -> Path:
     results_folder = Path(results_folder)
     if hasattr(df, "compute"):
-        pdf = df.compute()
+        pldf = pl.from_pandas(df.compute())
     elif isinstance(df, pl.DataFrame):
-        pdf = df.to_pandas()
+        pldf = df
     else:
-        pdf = df.copy()
+        pldf = pl.from_pandas(df)
 
-    if "NumRows" not in pdf.columns or "NumCols" not in pdf.columns:
-        dims = pdf["GridPattern"].astype(str).str.split(":").str[0].str.split("x")
-        pdf["NumRows"], pdf["NumCols"] = dims.str[0].astype(int), dims.str[1].astype(
-            int
-        )
+    if "NumRows" not in pldf.columns or "NumCols" not in pldf.columns:
+        dims = pldf["GridPattern"].str.split(":").list.get(0).str.split("x")
+        pldf = pldf.with_columns([
+            dims.list.get(0).cast(pl.Int64).alias("NumRows"),
+            dims.list.get(1).cast(pl.Int64).alias("NumCols"),
+        ])
 
     if layer_names is None:
         exclude = {
@@ -253,14 +254,21 @@ def plot_uncrowding_grid_arrangements(
             "BackgroundColor",
         }
         layer_names = [
-            c for c in pdf.columns if c not in exclude and not str(c).startswith("__")
+            c for c in pldf.columns if c not in exclude and not str(c).startswith("__")
         ]
 
-    agg = pdf.groupby(["NumRows", "NumCols", "GridArrangement"])[layer_names].agg(
-        ["mean", "std"]
-    )
-    grid_sizes = sorted(
-        set((r, c) for r, c, _ in agg.index), key=lambda x: (x[0] * x[1], x[0], x[1])
+    agg_exprs = []
+    for l in layer_names:
+        agg_exprs.append(pl.col(l).mean().alias(f"{l}_mean"))
+        agg_exprs.append(pl.col(l).std().fill_null(0.0).alias(f"{l}_std"))
+
+    agg = pldf.group_by(["NumRows", "NumCols", "GridArrangement"]).agg(agg_exprs)
+
+    grid_sizes = list(
+        agg.select(["NumRows", "NumCols"])
+        .unique()
+        .sort(by=[pl.col("NumRows") * pl.col("NumCols"), "NumRows", "NumCols"])
+        .iter_rows()
     )
 
     n_cols = min(max_cols, len(grid_sizes)) or 1
@@ -285,7 +293,8 @@ def plot_uncrowding_grid_arrangements(
 
     for idx, (r, c) in enumerate(grid_sizes):
         row, col = (idx // n_cols) + 1, (idx % n_cols) + 1
-        arrangements = [
+        sub_agg = agg.filter((pl.col("NumRows") == r) & (pl.col("NumCols") == c))
+        available_arrs = [
             a
             for a in [
                 "uniform",
@@ -293,18 +302,13 @@ def plot_uncrowding_grid_arrangements(
                 "interleaved_rows",
                 "interleaved_both",
             ]
-            if (r, c, a) in agg.index
+            if a in sub_agg["GridArrangement"].to_list()
         ]
 
-        for arr in arrangements:
-            means = agg.loc[
-                (r, c, arr), [(l, "mean") for l in layer_names]
-            ].values.astype(float)
-            stds = (
-                agg.loc[(r, c, arr), [(l, "std") for l in layer_names]]
-                .fillna(0)
-                .values.astype(float)
-            )
+        for arr in available_arrs:
+            row_arr = sub_agg.filter(pl.col("GridArrangement") == arr)
+            means = np.array([row_arr[f"{l}_mean"][0] for l in layer_names], dtype=float)
+            stds = np.array([row_arr[f"{l}_std"][0] for l in layer_names], dtype=float)
             upper = np.clip(means + stds, 0.0, 1.0)
             lower = np.clip(means - stds, 0.0, 1.0)
 
