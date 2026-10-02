@@ -4,6 +4,10 @@ from PIL import Image
 from pathlib import Path
 from typing import Callable
 
+from src.utils import setup_logging
+
+_logger = setup_logging(__name__)
+
 
 class AnnotatedDataset(Dataset):
     def __init__(
@@ -33,13 +37,16 @@ class AnnotatedDataset(Dataset):
         row = self.annotations.row(idx, named=True)
         result = {}
         for k in self.test_columns:
-            v = row[k]
-            if k.endswith('Path'):
-                img = Image.open(self._root / v).convert("RGB")
-                if self.transform is not None:
-                    img = self.transform(img)
-                result[k.replace('Path', 'Image')] = img
-                result[k] = str(self._root / v)
-            else:
-                result[k] = v
+            try:
+                v = row[k]
+                if k.endswith('Path'):
+                    img = Image.open(self._root / v).convert("RGB")
+                    if self.transform is not None:
+                        img = self.transform(img)
+                    result[k.replace('Path', 'Image')] = img
+                    result[k] = str(self._root / v)
+                else:
+                    result[k] = v
+            except KeyError:
+                _logger.warning(f"Key {k} not found in annotations file. Make sure this is correct.")
         return result

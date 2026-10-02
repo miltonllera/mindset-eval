@@ -26,7 +26,10 @@ torch.set_float32_matmul_precision('high')
 
 _logger = setup_logging(__name__)
 
-TEST_COLUMNS = ['Path', 'VernierType', 'VernierOffset', 'GridPattern', 'ShapeSize']
+TEST_COLUMNS = [
+    'Path', 'VernierType', 'VernierOffset', 'GridPattern', 'NumRows', 'NumCols',
+    'CenterShape', 'AlternateShape', 'LocA', 'ScaleA', 'LocB', 'ScaleB'
+]
 TARGET_COLUMN = 'VernierType'
 
 
@@ -80,19 +83,9 @@ def record_from_model(
             sample_ids = list(range(sample_counter, sample_counter + bsz))
             sample_counter += bsz
 
-            vernier_offsets = list(batch['VernierOffset'])
-            grid_patterns = list(batch['GridPattern'])
-            targets_list = [int(t) if isinstance(t, torch.Tensor) else t for t in targets]
-
-            chunk_dict = {
-                'SampleID': sample_ids,
-                'VernierOffset': vernier_offsets,
-                'GridPattern': grid_patterns,
-                'Target': targets_list,
-            }
-            for extra_col in ('GridArrangement', 'NumRows', 'NumCols'):
-                if extra_col in batch:
-                    chunk_dict[extra_col] = list(batch[extra_col])
+            chunk_dict = {k: list(batch[k]) for k in TEST_COLUMNS if k in batch}
+            chunk_dict['SampleID'] = sample_ids
+            chunk_dict['Target'] = [int(t) if isinstance(t, torch.Tensor) else t for t in targets]
 
             for k, v in preds.items():
                 pred_tensor = v.squeeze(-1) if v.ndim > 1 else v
@@ -122,9 +115,7 @@ def record_from_model(
         ddf = dd.read_parquet(recordings_file_path)
 
     layer_names = [
-        c for c in ddf.columns if c not in
-        ('SampleID', 'VernierOffset', 'GridPattern', 'GridArrangement', 'NumRows', 'NumCols', 'Target', 'Pattern Length')
-        and not str(c).startswith('__')
+        c for c in ddf.columns if c not in TEST_COLUMNS and not str(c).startswith('__')
     ]
     for layer in layer_names:
         ddf[layer] = (ddf[layer] == ddf['Target']).astype(float)
