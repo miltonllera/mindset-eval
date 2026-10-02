@@ -9,14 +9,14 @@ MODELS=(
   "swin_base_patch4_window7_224.ms_in1k swin_s3_base_224.ms_in1k swinv2_base_window12to16_192to256.ms_in22k_ft_in1k"
 )
 
-RECORD_FROM=(
-  "^act1:in ^layer[1-4]\.([0-9]|[1-2][0-9])\.act3:in ^fc:in"
-  "^stem\.1 ^stages\.[0-3]\.blocks\.([0-9]|[1-2][0-9]):in"
-  "^blocks\.([0-9]|[1-9][0-9]):out"
-  "^blocks\.([0-9]|[1-9][0-9]):out"
-  "^layers\.[0-3]\.blocks\.([0-9]|1[0-9])"
-  "^layers\.[0-3]\.blocks\.([0-9]|[1-3][0-9])"
-)
+# RECORD_FROM=(
+#   "^act1:in ^layer[1-4]\.([0-9]|[1-2][0-9])\.act3:in ^fc:in"
+#   "^stem\.1 ^stages\.[0-3]\.blocks\.([0-9]|[1-2][0-9]):in"
+#   "^blocks\.([0-9]|[1-9][0-9]):out"
+#   "^blocks\.([0-9]|[1-9][0-9]):out"
+#   "^layers\.[0-3]\.blocks\.([0-9]|1[0-9])"
+#   "^layers\.[0-3]\.blocks\.([0-9]|[1-3][0-9])"
+# )
 
 # for i in "${!MODELS[@]}"; do
 # uv run python -m scripts.low_mid_vis.crowding \
@@ -29,15 +29,15 @@ RECORD_FROM=(
 # done
 
 
-for i in "${!MODELS[@]}"; do
-uv run python -m scripts.low_mid_vis.crowding \
-  --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions/annotation.csv" \
-  --models ${MODELS[$i]} \
-  --record_from ${RECORD_FROM[$i]} \
-  --overwrite_recordings \
-  --results_folder data/results/uncrowding_distribution_bimodal_shifted \
-  --output_tag 'pre_act'
-done
+# for i in "${!MODELS[@]}"; do
+# uv run python -m scripts.low_mid_vis.crowding \
+#   --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions/annotation.csv" \
+#   --models ${MODELS[$i]} \
+#   --record_from ${RECORD_FROM[$i]} \
+#   --overwrite_recordings \
+#   --results_folder data/results/uncrowding_distribution_bimodal_shifted \
+#   --output_tag 'pre_act'
+# done
 
 RECORD_FROM=(
   "^layer[1-4]\.([0-9]|[1-2][0-9])\.bn3"
@@ -58,12 +58,12 @@ RECORD_FROM=(
 #   --output_tag 'res_stream'
 # done
 
-# for i in "${!MODELS[@]}"; do
-# uv run python -m scripts.low_mid_vis.crowding \
-#   --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions/annotation.csv" \
-#   --models ${MODELS[$i]} \
-#   --record_from ${RECORD_FROM[$i]} \
-#   --overwrite_recordings \
-#   --results_folder data/results/uncrowding_distribution_bimodal_shifted \
-#   --output_tag 'res_stream'
-# done
+for i in "${!MODELS[@]}"; do
+uv run python -m scripts.low_mid_vis.crowding \
+  --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions/annotation.csv" \
+  --models ${MODELS[$i]} \
+  --record_from ${RECORD_FROM[$i]} \
+  --overwrite_recordings \
+  --results_folder data/results/uncrowding_distribution_bimodal_shifted \
+  --output_tag 'res_stream'
+done
