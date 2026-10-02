@@ -4,7 +4,7 @@ from math import prod
 from pathlib import Path
 
 import torch
-import pandas as pd
+import polars as pl
 import dask.dataframe as dd
 from lightning.pytorch import Trainer
 from torch.utils.data import DataLoader, random_split
@@ -61,7 +61,7 @@ def record_from_model(
     def _flush_buffer():
         nonlocal buffer_chunks
         if buffer_chunks:
-            flush_df = pd.concat(buffer_chunks, ignore_index=True)
+            flush_df = pl.concat(buffer_chunks)
             dd.from_pandas(flush_df, npartitions=1).to_parquet(
                 recordings_file_path,
                 engine="pyarrow",
@@ -91,7 +91,7 @@ def record_from_model(
                 pred_tensor = v.squeeze(-1) if v.ndim > 1 else v
                 chunk_dict[k] = (pred_tensor.sigmoid() > 0.5).to(dtype=torch.int).cpu().tolist()
 
-            buffer_chunks.append(pd.DataFrame(chunk_dict))
+            buffer_chunks.append(pl.DataFrame(chunk_dict))
 
             del images, preds
             if torch.cuda.is_available():

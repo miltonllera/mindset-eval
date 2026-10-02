@@ -18,35 +18,35 @@ RECORD_FROM=(
   "^layers\.[0-3]\.blocks\.([0-9]|[1-3][0-9])"
 )
 
-# for i in "${!MODELS[@]}"; do
-# uv run python -m scripts.low_mid_vis.crowding \
-#   --annotations_file "data/datasets/low_mid_vision/uncrowding_shapes/annotation.csv" \
-#   --models ${MODELS[$i]} \
-#   --record_from ${RECORD_FROM[$i]} \
-#   --overwrite_recordings \
-#   --results_folder data/results/uncrowding_shapes \
-#   --output_tag 'pre_act'
-# done
+for i in "${!MODELS[@]}"; do
+uv run python -m scripts.low_mid_vis.crowding \
+  --annotations_file "data/datasets/low_mid_vision/uncrowding_shapes/annotation.csv" \
+  --models ${MODELS[$i]} \
+  --record_from ${RECORD_FROM[$i]} \
+  --overwrite_recordings \
+  --results_folder data/results/uncrowding_shapes \
+  --output_tag 'pre_act'
+done
 
-# for i in "${!MODELS[@]}"; do
-# uv run python -m scripts.low_mid_vis.crowding \
-#   --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions_narrow_wide/annotation.csv" \
-#   --models ${MODELS[$i]} \
-#   --record_from ${RECORD_FROM[$i]} \
-#   --overwrite_recordings \
-#   --results_folder data/results/uncrowding_distribution_narrow_wide \
-#   --output_tag 'pre_act'
-# done
+for i in "${!MODELS[@]}"; do
+uv run python -m scripts.low_mid_vis.crowding \
+  --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions_narrow_wide/annotation.csv" \
+  --models ${MODELS[$i]} \
+  --record_from ${RECORD_FROM[$i]} \
+  --overwrite_recordings \
+  --results_folder data/results/uncrowding_distribution_narrow_wide \
+  --output_tag 'pre_act'
+done
 
-# for i in "${!MODELS[@]}"; do
-# uv run python -m scripts.low_mid_vis.crowding \
-#   --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions_bimodal/annotation.csv" \
-#   --models ${MODELS[$i]} \
-#   --record_from ${RECORD_FROM[$i]} \
-#   --overwrite_recordings \
-#   --results_folder data/results/uncrowding_distribution_bimodal \
-#   --output_tag 'pre_act'
-# done
+for i in "${!MODELS[@]}"; do
+uv run python -m scripts.low_mid_vis.crowding \
+  --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions_bimodal/annotation.csv" \
+  --models ${MODELS[$i]} \
+  --record_from ${RECORD_FROM[$i]} \
+  --overwrite_recordings \
+  --results_folder data/results/uncrowding_distribution_bimodal \
+  --output_tag 'pre_act'
+done
 
 for i in "${!MODELS[@]}"; do
 uv run python -m scripts.low_mid_vis.crowding \
@@ -67,35 +67,35 @@ RECORD_FROM=(
   "^layers\.[0-3]\.blocks\.([0-9]|[1-3][0-9])\.drop_path2"
 )
 
-# for i in "${!MODELS[@]}"; do
-# uv run python -m scripts.low_mid_vis.crowding \
-#   --annotations_file "data/datasets/low_mid_vision/uncrowding_shapes/annotation.csv" \
-#   --models ${MODELS[$i]} \
-#   --record_from ${RECORD_FROM[$i]} \
-#   --overwrite_recordings \
-#   --results_folder data/results/uncrowding_shapes \
-#   --output_tag 'res_stream'
-# done
+for i in "${!MODELS[@]}"; do
+uv run python -m scripts.low_mid_vis.crowding \
+  --annotations_file "data/datasets/low_mid_vision/uncrowding_shapes/annotation.csv" \
+  --models ${MODELS[$i]} \
+  --record_from ${RECORD_FROM[$i]} \
+  --overwrite_recordings \
+  --results_folder data/results/uncrowding_shapes \
+  --output_tag 'res_stream'
+done
 
-# for i in "${!MODELS[@]}"; do
-# uv run python -m scripts.low_mid_vis.crowding \
-#   --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions_narrow_wide/annotation.csv" \
-#   --models ${MODELS[$i]} \
-#   --record_from ${RECORD_FROM[$i]} \
-#   --overwrite_recordings \
-#   --results_folder data/results/uncrowding_distribution_narrow_wide \
-#   --output_tag 'res_stream'
-# done
+for i in "${!MODELS[@]}"; do
+uv run python -m scripts.low_mid_vis.crowding \
+  --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions_narrow_wide/annotation.csv" \
+  --models ${MODELS[$i]} \
+  --record_from ${RECORD_FROM[$i]} \
+  --overwrite_recordings \
+  --results_folder data/results/uncrowding_distribution_narrow_wide \
+  --output_tag 'res_stream'
+done
 
-# for i in "${!MODELS[@]}"; do
-# uv run python -m scripts.low_mid_vis.crowding \
-#   --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions_bimodal/annotation.csv" \
-#   --models ${MODELS[$i]} \
-#   --record_from ${RECORD_FROM[$i]} \
-#   --overwrite_recordings \
-#   --results_folder data/results/uncrowding_distribution_bimodal \
-#   --output_tag 'res_stream'
-# done
+for i in "${!MODELS[@]}"; do
+uv run python -m scripts.low_mid_vis.crowding \
+  --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions_bimodal/annotation.csv" \
+  --models ${MODELS[$i]} \
+  --record_from ${RECORD_FROM[$i]} \
+  --overwrite_recordings \
+  --results_folder data/results/uncrowding_distribution_bimodal \
+  --output_tag 'res_stream'
+done
 
 for i in "${!MODELS[@]}"; do
 uv run python -m scripts.low_mid_vis.crowding \
