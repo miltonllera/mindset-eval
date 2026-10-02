@@ -2156,7 +2156,7 @@ requires-dist = [
 [[package]]
 name = "mindset-vision"
 version = "0.1.0"
-source = { git = "https://github.com/mindset-vision/mindset-vision#39b9dbf1b2b53a445c5c221fbcce2053f0ec4057" }
+source = { git = "https://github.com/mindset-vision/mindset-vision#b28f553de6945593194ceddcb3540fcb6499c15e" }
 dependencies = [
     { name = "beautifulsoup4" },
     { name = "ipython" },

@@ -28,7 +28,7 @@ _logger = setup_logging(__name__)
 
 TEST_COLUMNS = [
     'Path', 'VernierType', 'VernierOffset', 'GridPattern', 'NumRows', 'NumCols',
-    'CenterShape', 'AlternateShape', 'LocA', 'ScaleA', 'LocB', 'ScaleB'
+    'CenterShape', 'AlternateShape', 'Loc', 'Scale'
 ]
 TARGET_COLUMN = 'VernierType'
 
@@ -175,8 +175,9 @@ def record_all(annotations_file, model_names, record_from, results_folder, outpu
             continue
 
         available_cols = pl.read_csv(annotations_file, n_rows=1).columns
-        test_columns = [
-            c for c in ['Path', 'VernierType', 'VernierOffset', 'GridPattern', 'GridArrangement', 'NumRows', 'NumCols', 'ShapeSize']
+        test_columns = [ c for c in [
+                'Path', 'VernierType', 'VernierOffset', 'GridPattern', 'GridArrangement',
+                'NumRows', 'NumCols', 'ShapeSize']
             if c in available_cols
         ]
 
