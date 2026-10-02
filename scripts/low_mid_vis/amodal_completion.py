@@ -3,8 +3,8 @@ import shutil
 from pathlib import Path
 
 import torch
-import pandas as pd
-import dask.dataframe as dd
+import polars as pl
+import pyarrow.parquet as pq
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -73,19 +73,17 @@ def record_from_model(
 
     layer_names = []
     buffer_chunks = []
+    writer = None
 
     def _flush_buffer():
-        nonlocal buffer_chunks
+        nonlocal buffer_chunks, writer
         if buffer_chunks:
-            flush_df = pd.concat(buffer_chunks, ignore_index=True)
-            dd.from_pandas(flush_df, npartitions=1).to_parquet(
-                recordings_file_path,
-                engine="pyarrow",
-                append=True,
-                ignore_divisions=True,
-            )
+            flush_df = pl.concat(buffer_chunks)
+            table = flush_df.to_arrow()
+            if writer is None:
+                writer = pq.ParquetWriter(recordings_file_path, table.schema)
+            writer.write_table(table)
             buffer_chunks.clear()
-            del flush_df
 
     net.eval()
     with torch.inference_mode():
@@ -111,7 +109,7 @@ def record_from_model(
                 }
                 for k in layer_names:
                     chunk_dict[k] = calc_dist(ref_acts[k], comp_acts[k], bsz)
-                buffer_chunks.append(pd.DataFrame(chunk_dict))
+                buffer_chunks.append(pl.DataFrame(chunk_dict))
 
             del batch_layer_acts
             if torch.cuda.is_available():
@@ -122,22 +120,15 @@ def record_from_model(
 
         _flush_buffer()
 
+    if writer is not None:
+        writer.close()
+
     recorder.remove_hooks()
 
-    # Consolidate partitions to eliminate fragmentation
-    ddf = dd.read_parquet(recordings_file_path)
-    if ddf.npartitions > 1:
-        temp_consolidated_path = results_folder / f"{metric}{tag_suffix}_consolidated.parquet"
-        ddf.repartition(npartitions=1).to_parquet(
-            temp_consolidated_path,
-            engine="pyarrow",
-        )
-        shutil.rmtree(recordings_file_path)
-        temp_consolidated_path.rename(recordings_file_path)
-        ddf = dd.read_parquet(recordings_file_path)
+    df = pl.read_parquet(recordings_file_path)
 
     plot_filename = f"{metric}_vs_layer{tag_suffix}.png"
-    plot_layer_scores(ddf, metric, results_folder, layer_names=layer_names, filename=plot_filename)
+    plot_layer_scores(df, metric, results_folder, layer_names=layer_names, filename=plot_filename)
 
     _logger.info(f"Recording finished. Saved to: <{recordings_file_path}>")
     return recordings_file_path
