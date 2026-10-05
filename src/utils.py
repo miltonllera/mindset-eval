@@ -221,6 +221,7 @@ def plot_uncrowding_grid_arrangements(
     metric: str = "Accuracy",
     filename: str | None = None,
     max_cols: int = 3,
+    group_cols: str | list[str] | None = None,
 ) -> Path:
     results_folder = Path(results_folder)
     if hasattr(df, "compute"):
@@ -237,6 +238,22 @@ def plot_uncrowding_grid_arrangements(
             dims.list.get(1).cast(pl.Int64).alias("NumCols"),
         ])
 
+    # Extract Loc and Scale from Path if needed
+    if ("Loc" not in pldf.columns or "Scale" not in pldf.columns) and "Path" in pldf.columns:
+        if pldf["Path"].str.contains(r"loc[0-9.]+.*scale[0-9.]+").any():
+            pldf = pldf.with_columns([
+                pl.col("Path").str.extract(r"loc([0-9.]+)", 1).alias("Loc"),
+                pl.col("Path").str.extract(r"scale([0-9.]+)", 1).alias("Scale"),
+            ])
+
+    if group_cols is None:
+        if "Loc" in pldf.columns and "Scale" in pldf.columns:
+            group_cols = ["Loc", "Scale"]
+        else:
+            group_cols = ["GridArrangement"]
+    elif isinstance(group_cols, str):
+        group_cols = [group_cols]
+
     if layer_names is None:
         exclude = {
             "SampleID",
@@ -252,17 +269,51 @@ def plot_uncrowding_grid_arrangements(
             "VernierType",
             "IterNum",
             "BackgroundColor",
+            "Loc",
+            "Scale",
+            "LocA",
+            "ScaleA",
+            "LocB",
+            "ScaleB",
+            "Condition",
+            "ConditionType",
+            "BaseShape",
+            "Dimension",
+            "CenterShape",
+            "AlternateShape",
+            "_GroupLabel",
         }
         layer_names = [
             c for c in pldf.columns if c not in exclude and not str(c).startswith("__")
         ]
+
+    # Create _GroupLabel column
+    if set(group_cols) == {"Loc", "Scale"}:
+        pldf = pldf.with_columns(
+            pl.concat_str([
+                pl.lit("mu="),
+                pl.col("Loc").cast(pl.Utf8),
+                pl.lit(", sigma="),
+                pl.col("Scale").cast(pl.Utf8),
+            ]).alias("_GroupLabel")
+        )
+    elif group_cols == ["GridArrangement"]:
+        pldf = pldf.with_columns(
+            pl.col("GridArrangement").cast(pl.Utf8).alias("_GroupLabel")
+        )
+    else:
+        pldf = pldf.with_columns(
+            pl.concat_str(
+                [pl.col(c).cast(pl.Utf8) for c in group_cols], separator=", "
+            ).alias("_GroupLabel")
+        )
 
     agg_exprs = []
     for l in layer_names:
         agg_exprs.append(pl.col(l).mean().alias(f"{l}_mean"))
         agg_exprs.append(pl.col(l).std().fill_null(0.0).alias(f"{l}_std"))
 
-    agg = pldf.group_by(["NumRows", "NumCols", "GridArrangement"]).agg(agg_exprs)
+    agg = pldf.group_by(["NumRows", "NumCols", "_GroupLabel"]).agg(agg_exprs)
 
     grid_sizes = list(
         agg.select(["NumRows", "NumCols"])
@@ -283,36 +334,65 @@ def plot_uncrowding_grid_arrangements(
         horizontal_spacing=0.05,
     )
 
-    colors = {
-        "uniform": "#1f77b4",
-        "interleaved_cols": "#ff7f0e",
-        "interleaved_rows": "#2ca02c",
-        "interleaved_both": "#d62728",
-    }
+    if set(group_cols) == {"Loc", "Scale"}:
+        unique_groups = (
+            pldf.select(["Loc", "Scale", "_GroupLabel"])
+            .unique()
+            .with_columns([
+                pl.col("Loc").cast(pl.Float64, strict=False).alias("_loc_num"),
+                pl.col("Scale").cast(pl.Float64, strict=False).alias("_scale_num"),
+            ])
+            .sort(by=["_loc_num", "_scale_num"])["_GroupLabel"]
+            .to_list()
+        )
+    elif group_cols == ["GridArrangement"]:
+        canonical_arrs = [
+            "uniform",
+            "interleaved_cols",
+            "interleaved_rows",
+            "interleaved_both",
+        ]
+        present_arrs = pldf["_GroupLabel"].unique().to_list()
+        unique_groups = [a for a in canonical_arrs if a in present_arrs] + [
+            a for a in present_arrs if a not in canonical_arrs
+        ]
+    else:
+        unique_groups = sorted(pldf["_GroupLabel"].unique().to_list())
+
+    if group_cols == ["GridArrangement"]:
+        colors = {
+            "uniform": "#1f77b4",
+            "interleaved_cols": "#ff7f0e",
+            "interleaved_rows": "#2ca02c",
+            "interleaved_both": "#d62728",
+        }
+    else:
+        palette = px.colors.qualitative.Plotly
+        colors = {
+            grp: palette[i % len(palette)] for i, grp in enumerate(unique_groups)
+        }
+
     seen_legend = set()
 
     for idx, (r, c) in enumerate(grid_sizes):
         row, col = (idx // n_cols) + 1, (idx % n_cols) + 1
         sub_agg = agg.filter((pl.col("NumRows") == r) & (pl.col("NumCols") == c))
-        available_arrs = [
-            a
-            for a in [
-                "uniform",
-                "interleaved_cols",
-                "interleaved_rows",
-                "interleaved_both",
-            ]
-            if a in sub_agg["GridArrangement"].to_list()
+        available_groups = [
+            g for g in unique_groups if g in sub_agg["_GroupLabel"].to_list()
         ]
 
-        for arr in available_arrs:
-            row_arr = sub_agg.filter(pl.col("GridArrangement") == arr)
-            means = np.array([row_arr[f"{l}_mean"][0] for l in layer_names], dtype=float)
-            stds = np.array([row_arr[f"{l}_std"][0] for l in layer_names], dtype=float)
+        for grp in available_groups:
+            row_grp = sub_agg.filter(pl.col("_GroupLabel") == grp)
+            means = np.array(
+                [row_grp[f"{l}_mean"][0] for l in layer_names], dtype=float
+            )
+            stds = np.array(
+                [row_grp[f"{l}_std"][0] for l in layer_names], dtype=float
+            )
             upper = np.clip(means + stds, 0.0, 1.0)
             lower = np.clip(means - stds, 0.0, 1.0)
 
-            color = colors.get(arr, "#7f7f7f")
+            color = colors.get(grp, "#7f7f7f")
             fig.add_trace(
                 go.Scatter(
                     x=layer_names + layer_names[::-1],
@@ -322,26 +402,31 @@ def plot_uncrowding_grid_arrangements(
                     line=dict(color="rgba(255,255,255,0)"),
                     hoverinfo="skip",
                     showlegend=False,
-                    legendgroup=arr,
+                    legendgroup=grp,
                 ),
                 row=row,
                 col=col,
             )
 
+            name = (
+                grp.replace("_", " ").title()
+                if group_cols == ["GridArrangement"]
+                else grp
+            )
             fig.add_trace(
                 go.Scatter(
                     x=layer_names,
                     y=means,
                     mode="lines",
                     line=dict(color=color, width=2),
-                    name=arr.replace("_", " ").title(),
-                    legendgroup=arr,
-                    showlegend=(arr not in seen_legend),
+                    name=name,
+                    legendgroup=grp,
+                    showlegend=(grp not in seen_legend),
                 ),
                 row=row,
                 col=col,
             )
-            seen_legend.add(arr)
+            seen_legend.add(grp)
 
     fig.update_layout(
         template="plotly_white",

@@ -170,11 +170,7 @@ def record_all(annotations_file, model_names, record_from, results_folder, outpu
             continue
 
         available_cols = pl.read_csv(annotations_file, n_rows=1).columns
-        test_columns = [ c for c in [
-                'Path', 'VernierType', 'VernierOffset', 'GridPattern', 'GridArrangement',
-                'NumRows', 'NumCols', 'ShapeSize']
-            if c in available_cols
-        ]
+        test_columns = [c for c in TEST_COLUMNS if c in available_cols]
 
         train_dataset = AnnotatedDataset(
             annotations_file,
