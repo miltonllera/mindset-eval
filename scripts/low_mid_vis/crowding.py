@@ -71,6 +71,13 @@ def record_from_model(
 
     feature_extractor = feature_extractor.eval().to(device=device)
     sample_counter = 0
+
+    def convert_if_tensor(data):
+        for i in range(len(data)):
+            if isinstance(data[i], torch.Tensor):
+                data[i] = data[i].item()
+        return data
+
     with torch.inference_mode():
         for batch_idx, batch in enumerate(tqdm(dataloader, desc=model_name)):
             images = batch['Image'].to(device)
@@ -81,7 +88,7 @@ def record_from_model(
             sample_ids = list(range(sample_counter, sample_counter + bsz))
             sample_counter += bsz
 
-            chunk_dict = {k: list(batch[k]) for k in TEST_COLUMNS if k in batch}
+            chunk_dict = {k: convert_if_tensor(list(batch[k])) for k in TEST_COLUMNS if k in batch}
             chunk_dict['SampleID'] = sample_ids
             chunk_dict['Target'] = [int(t) if isinstance(t, torch.Tensor) else t for t in targets]
 

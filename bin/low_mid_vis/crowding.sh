@@ -20,22 +20,22 @@ MODELS=(
 
 # for i in "${!MODELS[@]}"; do
 # uv run python -m scripts.low_mid_vis.crowding \
-#   --annotations_file "data/datasets/low_mid_vision/uncrowding_shapes/annotation.csv" \
+#   --annotations_file "data/datasets/low_mid_vision/uncrowding_shapes_large_offset/annotation.csv" \
 #   --models ${MODELS[$i]} \
 #   --record_from ${RECORD_FROM[$i]} \
 #   --overwrite_recordings \
-#   --results_folder data/results/uncrowding_shapes \
+#   --results_folder data/results/uncrowding_shapes_large_offset \
 #   --output_tag 'pre_act'
 # done
 
 
 # for i in "${!MODELS[@]}"; do
 # uv run python -m scripts.low_mid_vis.crowding \
-#   --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions/annotation.csv" \
+#   --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions_large_offset/annotation.csv" \
 #   --models ${MODELS[$i]} \
 #   --record_from ${RECORD_FROM[$i]} \
 #   --overwrite_recordings \
-#   --results_folder data/results/uncrowding_distribution_bimodal_shifted \
+#   --results_folder data/results/uncrowding_distribution_large_offset \
 #   --output_tag 'pre_act'
 # done
 
@@ -50,20 +50,20 @@ RECORD_FROM=(
 
 # for i in "${!MODELS[@]}"; do
 # uv run python -m scripts.low_mid_vis.crowding \
-#   --annotations_file "data/datasets/low_mid_vision/uncrowding_shapes/annotation.csv" \
+#   --annotations_file "data/datasets/low_mid_vision/uncrowding_shapes_large_offset/annotation.csv" \
 #   --models ${MODELS[$i]} \
 #   --record_from ${RECORD_FROM[$i]} \
 #   --overwrite_recordings \
-#   --results_folder data/results/uncrowding_shapes \
+#   --results_folder data/results/uncrowding_shapes_large_offset \
 #   --output_tag 'res_stream'
 # done
 
 for i in "${!MODELS[@]}"; do
 uv run python -m scripts.low_mid_vis.crowding \
-  --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions/annotation.csv" \
+  --annotations_file "data/datasets/low_mid_vision/uncrowding_distributions_large_offset/annotation.csv" \
   --models ${MODELS[$i]} \
   --record_from ${RECORD_FROM[$i]} \
   --overwrite_recordings \
-  --results_folder data/results/uncrowding_distribution_bimodal_shifted \
+  --results_folder data/results/uncrowding_distribution_large_offset \
   --output_tag 'res_stream'
 done

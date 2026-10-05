@@ -3,6 +3,7 @@ from torch.utils.data import Dataset
 from PIL import Image
 from pathlib import Path
 from typing import Callable
+import numpy as np
 
 from src.utils import setup_logging
 
@@ -25,6 +26,10 @@ class AnnotatedDataset(Dataset):
         if filter_expr is not None:
             annotations =  annotations.filter(eval(filter_expr))
 
+        float64_cols = [c for c, dtype in annotations.schema.items() if dtype == pl.Float64]
+        if float64_cols:
+            annotations = annotations.with_columns([pl.col(c).cast(pl.Float32) for c in float64_cols])
+
         self._root = annotations_file.parent
         self.annotations = annotations
         self.test_columns = test_columns
@@ -46,6 +51,8 @@ class AnnotatedDataset(Dataset):
                     result[k.replace('Path', 'Image')] = img
                     result[k] = str(self._root / v)
                 else:
+                    if isinstance(v, float):
+                        v = np.float32(v)
                     result[k] = v
             except KeyError:
                 _logger.warning(f"Key {k} not found in annotations file. Make sure this is correct.")
