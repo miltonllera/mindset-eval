@@ -43,7 +43,6 @@ mindset-eval/
 │       ├── depth_drawings.py
 │       ├── emergent_features.py
 │       ├── nap_vs_mp.py
-│       ├── nap_vs_mp_change.py
 │       └── rel_vs_coord.py
 ├── src/                       # Core python package
 │   ├── activation_recorder.py # PyTorch hook module for layer activations
@@ -61,6 +60,7 @@ mindset-eval/
 
 - Python `>= 3.13`
 - [`uv`](https://github.com/astral-sh/uv) (recommended) or `pip`
+- Chrome or Chromium, needed by `kaleido>=1.2` to save plots with `write_image`
 
 ### Quick Start with `uv`
 
@@ -103,7 +103,6 @@ The repository includes specialized scripts under `scripts/low_mid_vis/` for eva
 | `depth_drawings.py` | Representation invariance across 2D/3D rotated shapes & hulls | Layer-wise Distance Comparison |
 | `emergent_features.py` | Probing emergent Gestalt features vs. individual components | Representation Distance Analysis |
 | `nap_vs_mp.py` | Sensitivity to Non-Accidental (NAP) vs. Metric Properties (MP) | Relative Feature Distances |
-| `nap_vs_mp_change.py` | Feature changes across NAP and MP alterations | Comparative Layer-wise Analysis |
 | `rel_vs_coord.py` | Sensitivity to relational changes vs. coordinate shifts | Layer-wise Feature Shifts |
 
 ---
