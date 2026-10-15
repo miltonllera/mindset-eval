@@ -134,7 +134,93 @@ bash bin/low_mid_vis/amodal_completion.sh
 
 ---
 
-### 2. Python API Examples
+### 2. V-JEPA 2.1 and the large-model runs
+
+`init_model()` also supports `vjepa2_1_vit_base_384` (12 blocks) and
+`vjepa2_1_vit_large_384` (24 blocks). These are distilled RGB feature encoders,
+not classifiers: input is BCHW at 384 px and output is B×576×768/1024.
+The usual task CLIs and `blocks.N` hooks work without a separate launcher.
+
+On first use, the loader downloads the [Meta source at revision
+204698b](https://github.com/facebookresearch/vjepa2/tree/204698b45b3712590f06245fbfba32d3be539812)
+and the official [B weights](https://dl.fbaipublicfiles.com/vjepa2/vjepa2_1_vitb_dist_vitG_384.pt)
+or [L weights](https://dl.fbaipublicfiles.com/vjepa2/vjepa2_1_vitl_dist_vitG_384.pt)
+to `data/models/vjepa2/`. Weight downloads are SHA-256 checked against the checkpoints
+used for our earlier runs; cached files are reused without downloading again.
+`pretrained=False` fetches only the source. To reuse an offline cache, set
+`MINDSET_VJEPA_MODEL_DIR` to a directory containing the `.pt` files and the
+`vjepa2-204698b45b3712590f06245fbfba32d3be539812/` source tree. Meta's source and
+weights retain their upstream licenses.
+
+The four model×task combinations below are the held SigLIP2 and V-JEPA-L runs.
+Each command runs both `pre_act` and `res_stream`, so there are **eight runs**
+in total. Run them sequentially on a machine with enough host RAM and VRAM;
+these are not laptop smoke tests. Crowding trains a decoder at every selected
+layer, and decomposition retains full token activations. Keep the default
+resolution, precision, batch size and decoder settings when comparing results.
+
+Run `uv sync --locked` first, then paste this helper into a Bash shell from the
+repository root. It keeps the two stream settings in one place:
+
+```bash
+run_both_streams() {
+  local task="$1" model="$2" dataset="$3" results="$4" residual="$5"
+  local tag record
+  for tag in pre_act res_stream; do
+    record='^blocks\.([0-9]|[1-9][0-9]):out'
+    if [ "$tag" = res_stream ]; then record="$residual"; fi
+    uv run --locked python -m "scripts.low_mid_vis.$task" \
+      --annotations_file "data/datasets/low_mid_vision/$dataset/annotation.csv" \
+      --models "$model" --record_from "$record" --overwrite_recordings \
+      --results_folder "$results" --output_tag "$tag" || return
+  done
+}
+```
+
+**SigLIP2 — crowding**
+
+```bash
+run_both_streams crowding vit_so400m_patch14_siglip_378.v2_webli \
+  uncrowding_distributions_large_offset experiments/exp_006_siglip2/.intermediates/eval \
+  '^blocks\.([0-9]|[1-9][0-9])\.drop_path2'
+```
+
+**SigLIP2 — decomposition**
+
+```bash
+run_both_streams decomposition vit_so400m_patch14_siglip_378.v2_webli \
+  decomposition experiments/exp_006_siglip2/.intermediates/eval \
+  '^blocks\.([0-9]|[1-9][0-9])\.drop_path2'
+```
+
+**V-JEPA-L — crowding**
+
+```bash
+run_both_streams crowding vjepa2_1_vit_large_384 \
+  uncrowding_distributions_large_offset experiments/exp_009_vjepa21_l/.intermediates/eval \
+  '^blocks\.[0-9]+\.drop_path'
+```
+
+**V-JEPA-L — decomposition**
+
+```bash
+run_both_streams decomposition vjepa2_1_vit_large_384 \
+  decomposition experiments/exp_009_vjepa21_l/.intermediates/eval \
+  '^blocks\.[0-9]+\.drop_path'
+```
+
+The annotation paths assume the same toolbox-generated datasets, including the
+large-offset crowding distribution, not the similarly named lite datasets.
+Crowding arguments come from the `exp_006_siglip2` / `exp_009_vjepa21_l`
+`plan-crowding.json` manifests. Decomposition arguments follow the completed
+`exp_007_dinov3_l/.results/manifests/task-14.json` and `task-15.json`, with the
+model, output directory and model-specific stream selector replaced. The held
+decomposition jobs have not been run. Outputs go under `uncrowding/<model>/`
+or `decomposition/<model>/`, with the stream tag in each parquet/PNG filename.
+
+---
+
+### 3. Python API Examples
 
 #### Recording Layer Activations (`ActivationRecorder`)
 
