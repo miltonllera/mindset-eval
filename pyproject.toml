@@ -9,6 +9,7 @@ dependencies = [
     "ipython>=8.32.0",
     "jupyter>=1.1.1",
     "dask[dataframe]>=2024.1.0",
+    "einops>=0.8.1",
     "kagglehub>=0.3.7",
     "kaleido>=1.2.0",
     "lightning>=2.5.1.post0",

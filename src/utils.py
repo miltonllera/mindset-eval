@@ -12,6 +12,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from src.vjepa import register as register_vjepa
+
+register_vjepa()
+
 
 def setup_logging(module_name):
     logging.basicConfig(level=logging.INFO)
