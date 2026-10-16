@@ -203,6 +203,7 @@ def plot_layer_scores(
         linewidth=1,
         linecolor="black",
         mirror=True,  # Encloses top border
+        dtick=2,
     )
     fig.update_yaxes(
         showline=True,

@@ -84,6 +84,12 @@ CATALOG = {
         "swin_s3_base_224.ms_in1k",
         "swinv2_base_window12to16_192to256.ms_in22k_ft_in1k",
     ],
+    "SigLip": [
+        "vit_so400m_patch14_siglip_378.v2_webli",
+    ],
+    "JEPA": [
+        "vjepa2_1_vit_large_384",
+    ],
 }
 
 # Key mathematical and stream aggregation operations to include in the graph
@@ -224,16 +230,26 @@ def inspect_architecture(
     total_model_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+    if depth is not None:
+        try:
+            depth = int(depth)
+        except (ValueError, TypeError):
+            depth = 3
+    trace_depth = float("inf") if (depth is None or depth >= 6) else depth
+
     hierarchy: List[Dict[str, Any]] = []
     mod_id_to_entry: Dict[int, Dict[str, Any]] = {}
     path_to_entry: Dict[str, Dict[str, Any]] = {}
+    all_mod_id_to_path: Dict[int, str] = {id(mod): p for p, mod in model.named_modules() if p}
 
     for path, mod in model.named_modules():
         if not path:
             continue
         parts = path.split(".")
+        if len(parts) > trace_depth:
+            continue
         parent_path = ".".join(parts[:-1]) if len(parts) > 1 else None
-        is_leaf = len(list(mod.children())) == 0
+        is_leaf = (len(list(mod.children())) == 0) or (len(parts) == trace_depth)
         direct_params = sum(p.numel() for p in mod.parameters(recurse=False))
         total_mod_params = sum(p.numel() for p in mod.parameters(recurse=True))
 
@@ -339,11 +355,11 @@ def inspect_architecture(
 
     if draw_graph is not None:
         try:
-            # Full depth trace guarantees all nested blocks, MLPs, attention ops, and residual skips are caught
+            # Trace graph up to specified depth (float('inf') when depth >= 6 or None)
             cg = draw_graph(
                 model,
                 input_size=input_size,
-                depth=float("inf"),
+                depth=trace_depth,
                 device="cpu",
                 graph_dir=direction,
                 expand_nested=True,
@@ -368,6 +384,12 @@ def inspect_architecture(
                             cu_id = getattr(k, "compute_unit_id", None)
                             if cu_id in mod_id_to_entry:
                                 mod_path = mod_id_to_entry[cu_id]["id"]
+                            elif cu_id in all_mod_id_to_path:
+                                full_path = all_mod_id_to_path[cu_id]
+                                if trace_depth != float("inf"):
+                                    ancestor_path = ".".join(full_path.split(".")[:int(trace_depth)])
+                                    if ancestor_path in path_to_entry:
+                                        mod_path = ancestor_path
                         yield from walk_hierarchy(v, mod_path)
                 elif isinstance(item, list):
                     for elem in item:
@@ -441,6 +463,12 @@ def inspect_architecture(
                     c_id = getattr(node, "compute_unit_id", None)
                     if c_id and c_id in mod_id_to_entry:
                         return mod_id_to_entry[c_id]["id"]
+                    if c_id and c_id in all_mod_id_to_path:
+                        full_path = all_mod_id_to_path[c_id]
+                        if trace_depth != float("inf"):
+                            ancestor_path = ".".join(full_path.split(".")[:int(trace_depth)])
+                            if ancestor_path in path_to_entry:
+                                return ancestor_path
                 elif tname == "FunctionNode" and node.name in SEMANTIC_OPS:
                     return f"fn_{node.name}_{node.node_id}"
                 return None
@@ -823,6 +851,12 @@ HTML_PAGE = """<!DOCTYPE html>
 
     depthSlider.addEventListener('input', () => {
       depthVal.textContent = depthSlider.value >= 6 ? 'All' : depthSlider.value;
+    });
+
+    depthSlider.addEventListener('change', () => {
+      if (currentData && modelInput.value.trim()) {
+        triggerInspect();
+      }
     });
 
     // Direction Change Listener
@@ -1649,6 +1683,12 @@ def main():
         help="Do not automatically open web browser",
     )
     parser.add_argument(
+        "--depth",
+        type=int,
+        default=3,
+        help="Hierarchical depth to explore (default: 3, >=6 for all)",
+    )
+    parser.add_argument(
         "--export-json",
         type=str,
         default=None,
@@ -1663,7 +1703,7 @@ def main():
         print(f"Loading and inspecting {args.model}...")
         model = load_model(args.model, pretrained=False)
         input_size = parse_input_size(model, None)
-        res = inspect_architecture(model, input_size, depth=3)
+        res = inspect_architecture(model, input_size, depth=args.depth)
         with open(args.export_json, "w") as f:
             json.dump(res, f, indent=2)
         print(f"Architecture inspection saved to {args.export_json}")
