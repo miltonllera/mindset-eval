@@ -104,10 +104,10 @@ run_all_experiments() {
   echo "   res_stream : $RES_STREAM"
   echo "===================================================================="
 
-  # 1. Amodal Completion
-  local amodal_annot
-  amodal_annot=$(resolve_annotations "data/datasets/low_mid_vision/amodal_completion/annotation.csv")
-  run_both_streams "amodal_completion" "$model" "$amodal_annot" "$results" "$PRE_ACT" "$RES_STREAM"
+  # # 1. Amodal Completion
+  # local amodal_annot
+  # amodal_annot=$(resolve_annotations "data/datasets/low_mid_vision/amodal_completion/annotation.csv")
+  # run_both_streams "amodal_completion" "$model" "$amodal_annot" "$results" "$PRE_ACT" "$RES_STREAM"
 
   # 2. Visual Crowding (Shapes & Distributions)
   local crowd_shapes_annot crowd_dist_annot
@@ -121,39 +121,39 @@ run_all_experiments() {
     "data/datasets/low_mid_vision/uncrowding_distributions/annotation.csv")
   run_both_streams "crowding" "$model" "$crowd_dist_annot" "$results/uncrowding_distributions" "$PRE_ACT" "$RES_STREAM"
 
-  # 3. Shape Decomposition
-  local decomp_annot
-  decomp_annot=$(resolve_annotations "data/datasets/low_mid_vision/decomposition/annotation.csv")
-  run_both_streams "decomposition" "$model" "$decomp_annot" "$results" "$PRE_ACT" "$RES_STREAM"
+  # # 3. Shape Decomposition
+  # local decomp_annot
+  # decomp_annot=$(resolve_annotations "data/datasets/low_mid_vision/decomposition/annotation.csv")
+  # run_both_streams "decomposition" "$model" "$decomp_annot" "$results" "$PRE_ACT" "$RES_STREAM"
 
-  # 4. Depth Drawings
-  local depth_annot
-  depth_annot=$(resolve_annotations "data/datasets/low_mid_vision/depth_drawings/annotation.csv")
-  run_both_streams "depth_drawings" "$model" "$depth_annot" "$results" "$PRE_ACT" "$RES_STREAM"
+  # # 4. Depth Drawings
+  # local depth_annot
+  # depth_annot=$(resolve_annotations "data/datasets/low_mid_vision/depth_drawings/annotation.csv")
+  # run_both_streams "depth_drawings" "$model" "$depth_annot" "$results" "$PRE_ACT" "$RES_STREAM"
 
-  # 5. Emergent Gestalt Features (Linearity, Orientation, Proximity)
-  local ef_lin_annot ef_ori_annot ef_prox_annot
-  ef_lin_annot=$(resolve_annotations "data/datasets/low_mid_vision/emergent_features/linearity/annotation.csv")
-  run_both_streams "emergent_features" "$model" "$ef_lin_annot" "$results" "$PRE_ACT" "$RES_STREAM"
+  # # 5. Emergent Gestalt Features (Linearity, Orientation, Proximity)
+  # local ef_lin_annot ef_ori_annot ef_prox_annot
+  # ef_lin_annot=$(resolve_annotations "data/datasets/low_mid_vision/emergent_features/linearity/annotation.csv")
+  # run_both_streams "emergent_features" "$model" "$ef_lin_annot" "$results" "$PRE_ACT" "$RES_STREAM"
 
-  ef_ori_annot=$(resolve_annotations "data/datasets/low_mid_vision/emergent_features/orientation/annotation.csv")
-  run_both_streams "emergent_features" "$model" "$ef_ori_annot" "$results" "$PRE_ACT" "$RES_STREAM"
+  # ef_ori_annot=$(resolve_annotations "data/datasets/low_mid_vision/emergent_features/orientation/annotation.csv")
+  # run_both_streams "emergent_features" "$model" "$ef_ori_annot" "$results" "$PRE_ACT" "$RES_STREAM"
 
-  ef_prox_annot=$(resolve_annotations "data/datasets/low_mid_vision/emergent_features/proximity/annotation.csv")
-  run_both_streams "emergent_features" "$model" "$ef_prox_annot" "$results" "$PRE_ACT" "$RES_STREAM"
+  # ef_prox_annot=$(resolve_annotations "data/datasets/low_mid_vision/emergent_features/proximity/annotation.csv")
+  # run_both_streams "emergent_features" "$model" "$ef_prox_annot" "$results" "$PRE_ACT" "$RES_STREAM"
 
-  # 6. Non-Accidental Properties (NAP) vs. Metric Properties (MP)
-  local nap_annot
-  nap_annot=$(resolve_annotations "data/datasets/low_mid_vision/nap_vs_mp_3d_geons/annotation.csv")
-  run_both_streams "nap_vs_mp" "$model" "$nap_annot" "$results" "$PRE_ACT" "$RES_STREAM"
+  # # 6. Non-Accidental Properties (NAP) vs. Metric Properties (MP)
+  # local nap_annot
+  # nap_annot=$(resolve_annotations "data/datasets/low_mid_vision/nap_vs_mp_3d_geons/annotation.csv")
+  # run_both_streams "nap_vs_mp" "$model" "$nap_annot" "$results" "$PRE_ACT" "$RES_STREAM"
 
-  # 7. Relational vs. Coordinate Representation
-  local rel_annot
-  rel_annot=$(resolve_annotations \
-    "data/datasets/low_mid_vision/relational_vs_coordinate/annotation.csv" \
-    "data/datasets/low_mid_vision/rel_vs_coord_change/annotation.csv" \
-    "data/low_mid_vision/rel_vs_coord_change/annotation.csv")
-  run_both_streams "rel_vs_coord" "$model" "$rel_annot" "$results" "$PRE_ACT" "$RES_STREAM"
+  # # 7. Relational vs. Coordinate Representation
+  # local rel_annot
+  # rel_annot=$(resolve_annotations \
+  #   "data/datasets/low_mid_vision/relational_vs_coordinate/annotation.csv" \
+  #   "data/datasets/low_mid_vision/rel_vs_coord_change/annotation.csv" \
+  #   "data/low_mid_vision/rel_vs_coord_change/annotation.csv")
+  # run_both_streams "rel_vs_coord" "$model" "$rel_annot" "$results" "$PRE_ACT" "$RES_STREAM"
 }
 
 # Main Execution Loop

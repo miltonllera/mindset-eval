@@ -152,8 +152,8 @@ def record_from_model(
 
 def train_feature_extractor(feature_decoder, dataset):
     train_data, val_data = random_split(dataset, [0.8, 0.2])
-    dataloader = DataLoader(train_data, batch_size=64, shuffle=True, num_workers=0, drop_last=True)
-    val_dataloader = DataLoader(val_data, batch_size=64, shuffle=False, num_workers=0)
+    dataloader = DataLoader(train_data, batch_size=4, shuffle=True, num_workers=0, drop_last=True)
+    val_dataloader = DataLoader(val_data, batch_size=4, shuffle=False, num_workers=0)
     trainer = Trainer(
         max_epochs=-1, max_steps=1000, val_check_interval=100, check_val_every_n_epoch=None
     )
